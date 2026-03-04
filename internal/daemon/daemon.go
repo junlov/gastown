@@ -1302,6 +1302,17 @@ func (d *Daemon) ensureBootRunning() {
 
 	b := boot.New(d.config.TownRoot)
 
+	// Idle suppression: if Boot's last run found deacon healthy ("nothing"),
+	// suppress spawning for longer to avoid burning API calls. (fixes gt-qu883c)
+	idleSuppression := d.loadOperationalConfig().GetDaemonConfig().BootIdleSuppressionD()
+	if status, err := b.LoadStatus(); err == nil && status.LastAction == "nothing" {
+		if !status.CompletedAt.IsZero() && time.Since(status.CompletedAt) < idleSuppression {
+			d.logger.Printf("Boot last reported 'nothing' %s ago, within idle suppression (%s), skipping",
+				time.Since(status.CompletedAt).Round(time.Second), idleSuppression)
+			return
+		}
+	}
+
 	// Check for degraded mode
 	degraded := os.Getenv("GT_DEGRADED") == "true"
 	if degraded || !d.tmux.IsAvailable() {
