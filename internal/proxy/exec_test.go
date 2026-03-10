@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -116,7 +117,7 @@ func TestPolecatName(t *testing.T) {
 		{"gt-gastown-furiosa", "furiosa"},
 		{"gt-gas-town-furiosa", "furiosa"}, // hyphenated rig
 		{"gt-gastown-", ""},                // empty name
-		{"gt--furiosa", ""},                 // empty rig; rejected
+		{"gt--furiosa", ""},                // empty rig; rejected
 		{"noprefix-rig-name", ""},          // missing gt- prefix
 		{"gt-nodashinrest", ""},            // only one component after stripping gt-
 		{"", ""},                           // empty string
@@ -137,11 +138,11 @@ func TestCnToIdentity(t *testing.T) {
 	}{
 		{"gt-gastown-furiosa", "gastown/furiosa"},
 		{"gt-gas-town-furiosa", "gas-town/furiosa"}, // hyphenated rig
-		{"gt-gastown-", ""},                          // empty name
-		{"gt--furiosa", ""},                          // empty rig (two consecutive dashes after gt-)
-		{"noprefix-rig-name", ""},                    // missing gt- prefix
-		{"gt-nodashinrest", ""},                      // only one component after stripping gt-
-		{"", ""},                                     // empty string
+		{"gt-gastown-", ""},                         // empty name
+		{"gt--furiosa", ""},                         // empty rig (two consecutive dashes after gt-)
+		{"noprefix-rig-name", ""},                   // missing gt- prefix
+		{"gt-nodashinrest", ""},                     // only one component after stripping gt-
+		{"", ""},                                    // empty string
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -229,12 +230,19 @@ func TestHandleExec(t *testing.T) {
 		// The script is placed in a temp dir added to PATH so AllowedCommands
 		// can reference it by plain name (no path separator — issue 12).
 		scriptDir := t.TempDir()
-		scriptPath := filepath.Join(scriptDir, "printenv.sh")
-		require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nprintf '%s' \"$GT_PROXY_IDENTITY\"\n"), 0755))
-		t.Setenv("PATH", scriptDir+":"+os.Getenv("PATH"))
+		commandName := "printenv.sh"
+		if runtime.GOOS == "windows" {
+			commandName = "printenv"
+			scriptPath := filepath.Join(scriptDir, commandName+".cmd")
+			require.NoError(t, os.WriteFile(scriptPath, []byte("@echo off\r\n<nul set /p =%GT_PROXY_IDENTITY%\r\n"), 0644))
+		} else {
+			scriptPath := filepath.Join(scriptDir, commandName)
+			require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nprintf '%s' \"$GT_PROXY_IDENTITY\"\n"), 0755))
+		}
+		t.Setenv("PATH", scriptDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-		srv2 := newExecTestServer(t, Config{AllowedCommands: []string{"printenv.sh"}})
-		body := `{"argv":["printenv.sh"]}`
+		srv2 := newExecTestServer(t, Config{AllowedCommands: []string{commandName}})
+		body := `{"argv":["` + commandName + `"]}`
 		req := makeFakeRequest("POST", "/v1/exec", body, "gt-gastown-rust")
 		rec := httptest.NewRecorder()
 		srv2.handleExec(rec, req)

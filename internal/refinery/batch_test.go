@@ -112,6 +112,12 @@ func makeMR(id, branch, target string) *MRInfo {
 	}
 }
 
+func failMarkerGateCmd() string {
+	// Gate commands already run inside workDir, so use a relative path.
+	// Raw Windows paths like D:\... confuse `sh test -f` under MSYS.
+	return "test ! -f FAIL_MARKER"
+}
+
 // --- DefaultBatchConfig tests ---
 
 func TestDefaultBatchConfig(t *testing.T) {
@@ -467,7 +473,7 @@ func TestProcessBatch_GateFailure_BisectsToFindCulprit(t *testing.T) {
 	e := newTestEngineer(t, workDir, g)
 	// Gate that fails if FAIL_MARKER exists
 	e.config.Gates = map[string]*GateConfig{
-		"check": {Cmd: fmt.Sprintf("test ! -f %s/FAIL_MARKER", workDir)},
+		"check": {Cmd: failMarkerGateCmd()},
 	}
 	e.config.GatesParallel = false
 
@@ -601,7 +607,7 @@ func TestBisectBatch_SingleMR(t *testing.T) {
 
 	e := newTestEngineer(t, workDir, g)
 	e.config.Gates = map[string]*GateConfig{
-		"check": {Cmd: fmt.Sprintf("test ! -f %s/FAIL_MARKER", workDir)},
+		"check": {Cmd: failMarkerGateCmd()},
 	}
 
 	batch := []*MRInfo{makeMR("mr-a", "feature-a", "main")}
@@ -624,7 +630,7 @@ func TestBisectBatch_TwoMRs_SecondBad(t *testing.T) {
 
 	e := newTestEngineer(t, workDir, g)
 	e.config.Gates = map[string]*GateConfig{
-		"check": {Cmd: fmt.Sprintf("test ! -f %s/FAIL_MARKER", workDir)},
+		"check": {Cmd: failMarkerGateCmd()},
 	}
 
 	batch := []*MRInfo{
@@ -650,7 +656,7 @@ func TestBisectBatch_TwoMRs_FirstBad(t *testing.T) {
 
 	e := newTestEngineer(t, workDir, g)
 	e.config.Gates = map[string]*GateConfig{
-		"check": {Cmd: fmt.Sprintf("test ! -f %s/FAIL_MARKER", workDir)},
+		"check": {Cmd: failMarkerGateCmd()},
 	}
 
 	batch := []*MRInfo{
@@ -679,7 +685,7 @@ func TestBisectBatch_FourMRs_ThirdBad(t *testing.T) {
 	e := newTestEngineer(t, workDir, g)
 	e.output = os.Stderr
 	e.config.Gates = map[string]*GateConfig{
-		"check": {Cmd: fmt.Sprintf("test ! -f %s/FAIL_MARKER", workDir)},
+		"check": {Cmd: failMarkerGateCmd()},
 	}
 
 	batch := []*MRInfo{
@@ -744,7 +750,7 @@ func TestProcessBatch_BisectAndMergeGood(t *testing.T) {
 
 	e := newTestEngineer(t, workDir, g)
 	e.config.Gates = map[string]*GateConfig{
-		"check": {Cmd: fmt.Sprintf("test ! -f %s/FAIL_MARKER", workDir)},
+		"check": {Cmd: failMarkerGateCmd()},
 	}
 
 	batch := []*MRInfo{

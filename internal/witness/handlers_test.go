@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -328,14 +329,38 @@ func mockBd(execFn func(args []string) (string, error), runFn func(args []string
 	bd := &BdCli{
 		Exec: func(workDir string, args ...string) (string, error) {
 			mock.calls = append(mock.calls, strings.Join(args, " "))
-			return execFn(args)
+			return execFn(stripMockBdFlags(args))
 		},
 		Run: func(workDir string, args ...string) error {
 			mock.calls = append(mock.calls, strings.Join(args, " "))
-			return runFn(args)
+			return runFn(stripMockBdFlags(args))
 		},
 	}
 	return bd, mock
+}
+
+func stripMockBdFlags(args []string) []string {
+	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
+		args = args[1:]
+	}
+	return args
+}
+
+func installFakeTmuxNoServer(t *testing.T) {
+	t.Helper()
+
+	binDir := t.TempDir()
+	scriptPath := filepath.Join(binDir, "tmux")
+	script := "#!/bin/sh\nprintf '%s\\n' 'no server running on /tmp/tmux' 1>&2\nexit 1\n"
+	if runtime.GOOS == "windows" {
+		scriptPath += ".bat"
+		script = "@echo off\r\necho no server running on C:\\tmp\\tmux 1>&2\r\nexit /b 1\r\n"
+	}
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 // fakeBd creates a test-local *BdCli matching the old shell script behavior:
@@ -1084,6 +1109,8 @@ func TestDetectOrphanedBeads_ResultTypes(t *testing.T) {
 }
 
 func TestDetectOrphanedBeads_WithMockBd(t *testing.T) {
+	installFakeTmuxNoServer(t)
+
 	// Set up town directory structure
 	townRoot := t.TempDir()
 	rigName := "testrig"
@@ -1367,6 +1394,8 @@ func TestFindMRBeadForBranch_NoBdAvailable(t *testing.T) {
 }
 
 func TestDetectOrphanedMolecules_WithMockBd(t *testing.T) {
+	installFakeTmuxNoServer(t)
+
 	// Full test with mock bd returning beads assigned to dead polecats.
 	//
 	// Setup:
@@ -1798,4 +1827,3 @@ func TestZombieAgentSelfReportedStuck_Classification(t *testing.T) {
 		t.Error("ZombieAgentSelfReportedStuck should imply active work")
 	}
 }
-

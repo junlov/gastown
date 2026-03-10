@@ -33,7 +33,8 @@ func isTrackedByConvoy(beadID string) string {
 
 	// Primary: Use bd dep list to find what tracks this issue (direction=up)
 	// This is authoritative when cross-rig routing works
-	depCmd := exec.Command("bd", "dep", "list", beadID, "--direction=up", "--type=tracks", "--json")
+	depArgs := beads.MaybePrependAllowStale([]string{"dep", "list", beadID, "--direction=up", "--type=tracks", "--json"})
+	depCmd := exec.Command("bd", depArgs...)
 	depCmd.Dir = townRoot
 
 	out, err := depCmd.Output()
@@ -66,7 +67,8 @@ func findConvoyByDescription(townRoot, beadID string) string {
 	townBeads := filepath.Join(townRoot, ".beads")
 
 	// Query all open convoys from HQ
-	listCmd := exec.Command("bd", "list", "--type=convoy", "--status=open", "--json")
+	listArgs := beads.MaybePrependAllowStale([]string{"list", "--type=convoy", "--status=open", "--json"})
+	listCmd := exec.Command("bd", listArgs...)
 	listCmd.Dir = townBeads
 
 	out, err := listCmd.Output()
@@ -106,7 +108,8 @@ func findConvoyByDescription(townRoot, beadID string) string {
 // convoyTracksBead checks if a convoy has a tracks dependency on the given beadID.
 // Handles both raw bead IDs and external-formatted references (e.g., "external:gt-mol:gt-mol-xyz").
 func convoyTracksBead(beadsDir, convoyID, beadID string) bool {
-	depCmd := exec.Command("bd", "dep", "list", convoyID, "--direction=down", "--type=tracks", "--json")
+	depArgs := beads.MaybePrependAllowStale([]string{"dep", "list", convoyID, "--direction=down", "--type=tracks", "--json"})
+	depCmd := exec.Command("bd", depArgs...)
 	depCmd.Dir = beadsDir
 
 	out, err := depCmd.Output()
@@ -166,7 +169,8 @@ func getConvoyInfoForIssue(issueID string) *ConvoyInfo {
 	townBeads := filepath.Join(townRoot, ".beads")
 
 	// Get convoy details (labels + description) for ownership and merge strategy
-	showCmd := exec.Command("bd", "show", convoyID, "--json")
+	showArgs := beads.MaybePrependAllowStale([]string{"show", convoyID, "--json"})
+	showCmd := exec.Command("bd", showArgs...)
 	showCmd.Dir = townBeads
 	var stdout, stderr bytes.Buffer
 	showCmd.Stdout = &stdout

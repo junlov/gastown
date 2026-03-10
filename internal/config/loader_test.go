@@ -25,6 +25,23 @@ func skipIfAgentBinaryMissing(t *testing.T, agents ...string) {
 	}
 }
 
+func writeAgentStub(t *testing.T, binDir, name string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(binDir, name+".cmd")
+		if err := os.WriteFile(path, []byte("@echo off\r\nexit /b 0\r\n"), 0644); err != nil {
+			t.Fatalf("write %s stub: %v", name, err)
+		}
+		return
+	}
+
+	path := filepath.Join(binDir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write %s stub: %v", name, err)
+	}
+}
+
 // isClaudeCommand checks if a command is claude (either "claude" or a path ending in "/claude").
 // This handles the case where resolveClaudePath returns the full path to the claude binary.
 // Also handles Windows paths with .exe extension.
@@ -1621,10 +1638,7 @@ func TestResolveWorkerAgentConfig_WorkerSpecificOverridesRole(t *testing.T) {
 
 	// Create a fake codex binary so ValidateAgentConfig passes
 	binDir := t.TempDir()
-	codexPath := filepath.Join(binDir, "codex")
-	if err := os.WriteFile(codexPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
-		t.Fatalf("write codex stub: %v", err)
-	}
+	writeAgentStub(t, binDir, "codex")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	settings := NewRigSettings()
@@ -1684,10 +1698,7 @@ func TestBuildStartupCommand_WorkerAgentsViaCrew(t *testing.T) {
 
 	// Create a fake codex binary
 	binDir := t.TempDir()
-	codexPath := filepath.Join(binDir, "codex")
-	if err := os.WriteFile(codexPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
-		t.Fatalf("write codex stub: %v", err)
-	}
+	writeAgentStub(t, binDir, "codex")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	settings := NewRigSettings()

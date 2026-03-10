@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,10 @@ func TestGenerateCA(t *testing.T) {
 	})
 
 	t.Run("ca.key file permissions are 0600", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows does not preserve POSIX file mode bits from os.WriteFile")
+		}
+
 		dir := t.TempDir()
 		_, err := GenerateCA(dir)
 		require.NoError(t, err)
@@ -69,6 +74,9 @@ func TestGenerateCA(t *testing.T) {
 	})
 
 	t.Run("unwritable dir returns error", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows does not enforce POSIX directory write bits for this chmod-based failure path")
+		}
 		if os.Getuid() == 0 {
 			t.Skip("running as root; chmod restrictions do not apply")
 		}

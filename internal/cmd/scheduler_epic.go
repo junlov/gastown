@@ -297,8 +297,9 @@ type epicChild struct {
 
 // getEpicChildren returns child issues of an epic via dependency lookup.
 func getEpicChildren(epicID string) ([]epicChild, error) {
-	depCmd := exec.Command("bd", "dep", "list", epicID,
-		"--direction=down", "--type=depends_on", "--json")
+	depArgs := beads.MaybePrependAllowStale([]string{"dep", "list", epicID,
+		"--direction=down", "--type=depends_on", "--json"})
+	depCmd := exec.Command("bd", depArgs...)
 	depCmd.Dir = resolveBeadDir(epicID)
 	var stdout bytes.Buffer
 	depCmd.Stdout = &stdout

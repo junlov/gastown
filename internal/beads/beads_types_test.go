@@ -3,11 +3,124 @@ package beads
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/constants"
 )
+
+func installMockBDRecorder(t *testing.T) string {
+	t.Helper()
+
+	binDir := t.TempDir()
+	logPath := filepath.Join(binDir, "bd.log")
+
+	if runtime.GOOS == "windows" {
+		psPath := filepath.Join(binDir, "bd.ps1")
+		psScript := `# Mock bd for beads tests.
+$logFile = '` + strings.ReplaceAll(logPath, "'", "''") + `'
+Add-Content -Path $logFile -Value ($args -join ' ')
+
+$cmd = ''
+foreach ($arg in $args) {
+  if ($arg -like '--*') { continue }
+  $cmd = $arg
+  break
+}
+
+switch ($cmd) {
+  'init' {
+    $target = $env:BEADS_DIR
+    if ([string]::IsNullOrEmpty($target)) {
+      $target = Join-Path (Get-Location) '.beads'
+    }
+
+    $prefix = 'gt'
+    for ($i = 0; $i -lt $args.Length; $i++) {
+      if ($args[$i] -like '--prefix=*') {
+        $prefix = $args[$i].Substring(9)
+      } elseif ($args[$i] -eq '--prefix' -and $i + 1 -lt $args.Length) {
+        $prefix = $args[$i + 1]
+      }
+    }
+
+    New-Item -ItemType Directory -Force -Path (Join-Path $target 'dolt') | Out-Null
+    Set-Content -Path (Join-Path $target 'config.yaml') -Value @("prefix: " + $prefix, "issue-prefix: " + $prefix + "-")
+    exit 0
+  }
+  'config' {
+    if ($args.Length -ge 3 -and $args[1] -eq 'get' -and $args[2] -eq 'status.custom') {
+      Write-Output ''
+    }
+    exit 0
+  }
+  'migrate' { exit 0 }
+  default { exit 0 }
+}
+`
+		cmdScript := "@echo off\r\npwsh -NoProfile -NoLogo -File \"" + psPath + "\" %*\r\n"
+		if err := os.WriteFile(psPath, []byte(psScript), 0644); err != nil {
+			t.Fatalf("write mock bd ps1: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(binDir, "bd.cmd"), []byte(cmdScript), 0644); err != nil {
+			t.Fatalf("write mock bd cmd: %v", err)
+		}
+	} else {
+		script := `#!/bin/sh
+LOG_FILE='` + logPath + `'
+printf '%s\n' "$*" >> "$LOG_FILE"
+
+cmd=""
+for arg in "$@"; do
+  case "$arg" in
+    --*) ;;
+    *) cmd="$arg"; break ;;
+  esac
+done
+
+case "$cmd" in
+  init)
+    target="${BEADS_DIR:-$(pwd)/.beads}"
+    prefix="gt"
+    for arg in "$@"; do
+      case "$arg" in
+        --prefix=*) prefix="${arg#--prefix=}" ;;
+      esac
+    done
+    mkdir -p "$target/dolt"
+    printf 'prefix: %s\nissue-prefix: %s-\n' "$prefix" "$prefix" > "$target/config.yaml"
+    exit 0
+    ;;
+  config|migrate)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+		if err := os.WriteFile(filepath.Join(binDir, "bd"), []byte(script), 0755); err != nil {
+			t.Fatalf("write mock bd: %v", err)
+		}
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logPath
+}
+
+func readMockBDLog(t *testing.T, logPath string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(logPath)
+	if os.IsNotExist(err) {
+		return ""
+	}
+	if err != nil {
+		t.Fatalf("read mock bd log: %v", err)
+	}
+	return string(data)
+}
 
 func TestFindTownRoot(t *testing.T) {
 	// Create a temporary town structure
@@ -172,6 +285,7 @@ func TestEnsureCustomTypes(t *testing.T) {
 	})
 
 	t.Run("stale sentinel triggers re-configuration", func(t *testing.T) {
+		logPath := installMockBDRecorder(t)
 		tmpDir := t.TempDir()
 		beadsDir := filepath.Join(tmpDir, ".beads")
 		if err := os.MkdirAll(beadsDir, 0755); err != nil {
@@ -186,14 +300,20 @@ func TestEnsureCustomTypes(t *testing.T) {
 
 		ResetEnsuredDirs()
 
-		// Should NOT cache-hit — sentinel is stale. Will attempt bd config set,
-		// which may fail in test env (no bd), but it should NOT return nil
-		// from the sentinel check.
 		err := EnsureCustomTypes(beadsDir)
-		// We can't assert success/failure (depends on bd availability),
-		// but verify it didn't silently cache the stale sentinel
-		if ensuredDirs[beadsDir] && err != nil {
-			t.Error("should not cache a failed re-configuration")
+		if err != nil {
+			t.Fatalf("EnsureCustomTypes: %v", err)
+		}
+
+		if got := strings.TrimSpace(string(mustReadFile(t, sentinelPath))); got != strings.Join(constants.BeadsCustomTypesList(), ",") {
+			t.Fatalf("types sentinel = %q, want current configured types", got)
+		}
+
+		logOutput := readMockBDLog(t, logPath)
+		for _, want := range []string{"init", "config set types.custom"} {
+			if !strings.Contains(logOutput, want) {
+				t.Fatalf("mock bd log %q missing %q", logOutput, want)
+			}
 		}
 	})
 
@@ -268,6 +388,7 @@ func TestEnsureCustomStatuses(t *testing.T) {
 	})
 
 	t.Run("stale sentinel triggers re-configuration", func(t *testing.T) {
+		logPath := installMockBDRecorder(t)
 		tmpDir := t.TempDir()
 		beadsDir := filepath.Join(tmpDir, ".beads")
 		if err := os.MkdirAll(beadsDir, 0755); err != nil {
@@ -282,13 +403,24 @@ func TestEnsureCustomStatuses(t *testing.T) {
 
 		ResetEnsuredDirs()
 
-		// Should NOT cache-hit — sentinel is stale. Will attempt bd config set,
-		// which may fail in test env (no bd), but it should NOT return nil
-		// from the sentinel check.
 		cacheKey := beadsDir + ":statuses"
 		err := EnsureCustomStatuses(beadsDir)
-		if ensuredDirs[cacheKey] && err != nil {
-			t.Error("should not cache a failed re-configuration")
+		if err != nil {
+			t.Fatalf("EnsureCustomStatuses: %v", err)
+		}
+
+		if !ensuredDirs[cacheKey] {
+			t.Fatal("expected successful reconfiguration to populate statuses cache")
+		}
+		if got := strings.TrimSpace(string(mustReadFile(t, sentinelPath))); got != strings.Join(constants.BeadsCustomStatusesList(), ",") {
+			t.Fatalf("statuses sentinel = %q, want current configured statuses", got)
+		}
+
+		logOutput := readMockBDLog(t, logPath)
+		for _, want := range []string{"init", "config get status.custom", "config set status.custom"} {
+			if !strings.Contains(logOutput, want) {
+				t.Fatalf("mock bd log %q missing %q", logOutput, want)
+			}
 		}
 	})
 
@@ -382,6 +514,7 @@ func TestEnsureDatabaseInitialized(t *testing.T) {
 	})
 
 	t.Run("metadata.json exists but db missing — attempts init", func(t *testing.T) {
+		logPath := installMockBDRecorder(t)
 		// metadata.json references a database that doesn't exist in .dolt-data/
 		townDir := t.TempDir()
 		mayorDir := filepath.Join(townDir, "mayor")
@@ -396,20 +529,44 @@ func TestEnsureDatabaseInitialized(t *testing.T) {
 		meta := `{"dolt_mode":"server","dolt_database":"missing_db"}`
 		os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(meta), 0644)
 
-		// Should fall through to bd init (not short-circuit on metadata.json alone).
-		// bd init may or may not succeed depending on test env, but should not panic.
-		_ = ensureDatabaseInitialized(beadsDir)
+		if err := ensureDatabaseInitialized(beadsDir); err != nil {
+			t.Fatalf("ensureDatabaseInitialized: %v", err)
+		}
+
+		logOutput := readMockBDLog(t, logPath)
+		for _, want := range []string{"init --prefix gt --server", "config set issue_prefix", "migrate --yes"} {
+			if !strings.Contains(logOutput, want) {
+				t.Fatalf("mock bd log %q missing %q", logOutput, want)
+			}
+		}
 	})
 
 	t.Run("no database artifacts — attempts bd init", func(t *testing.T) {
+		logPath := installMockBDRecorder(t)
 		beadsDir := filepath.Join(t.TempDir(), ".beads")
 		os.MkdirAll(beadsDir, 0755)
 
-		// With no dolt/ or metadata.json, ensureDatabaseInitialized
-		// must attempt bd init. The result depends on whether bd is available
-		// in the test environment. Either way, it should not panic.
-		_ = ensureDatabaseInitialized(beadsDir)
+		if err := ensureDatabaseInitialized(beadsDir); err != nil {
+			t.Fatalf("ensureDatabaseInitialized: %v", err)
+		}
+
+		logOutput := readMockBDLog(t, logPath)
+		for _, want := range []string{"init --prefix gt --server", "config set issue_prefix", "migrate --yes"} {
+			if !strings.Contains(logOutput, want) {
+				t.Fatalf("mock bd log %q missing %q", logOutput, want)
+			}
+		}
 	})
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
 }
 
 func TestDetectPrefix(t *testing.T) {

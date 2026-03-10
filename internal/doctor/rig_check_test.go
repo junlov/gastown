@@ -3,9 +3,48 @@ package doctor
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func installMockBdInitOnly(t *testing.T) {
+	t.Helper()
+
+	binDir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		psPath := filepath.Join(binDir, "bd.ps1")
+		psScript := `$target = Join-Path (Get-Location) '.beads'
+foreach ($arg in $args) {
+  if ($arg -eq 'init') {
+    New-Item -ItemType Directory -Force -Path $target | Out-Null
+    Set-Content -Path (Join-Path $target 'config.yaml') -Value @('prefix: tr', 'issue-prefix: tr-')
+    exit 0
+  }
+}
+exit 0
+`
+		cmdScript := "@echo off\r\npwsh -NoProfile -NoLogo -File \"" + psPath + "\" %*\r\n"
+		if err := os.WriteFile(psPath, []byte(psScript), 0644); err != nil {
+			t.Fatalf("write mock bd ps1: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(binDir, "bd.cmd"), []byte(cmdScript), 0644); err != nil {
+			t.Fatalf("write mock bd cmd: %v", err)
+		}
+	} else {
+		script := `#!/bin/sh
+target="$(pwd)/.beads"
+mkdir -p "$target"
+printf 'prefix: tr\nissue-prefix: tr-\n' > "$target/config.yaml"
+exit 0
+`
+		if err := os.WriteFile(filepath.Join(binDir, "bd"), []byte(script), 0755); err != nil {
+			t.Fatalf("write mock bd: %v", err)
+		}
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
 
 func TestNewBeadsRedirectCheck(t *testing.T) {
 	check := NewBeadsRedirectCheck()
@@ -291,6 +330,8 @@ func TestBeadsRedirectCheck_FixNoOp_LocalBeads(t *testing.T) {
 }
 
 func TestBeadsRedirectCheck_FixInitBeads(t *testing.T) {
+	installMockBdInitOnly(t)
+
 	tmpDir := t.TempDir()
 	rigName := "testrig"
 	rigDir := filepath.Join(tmpDir, rigName)

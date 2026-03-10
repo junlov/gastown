@@ -158,6 +158,8 @@ func IsRigParkedOrDocked(townRoot, rigName string) (bool, string) {
 
 // getAllRigs discovers all rigs in the current Gas Town workspace.
 // Returns the list of rigs, the town root path, and any error.
+//
+//nolint:unparam // Keep townRoot in the result for callers that need follow-up town-scoped operations.
 func getAllRigs() ([]*rig.Rig, string, error) {
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {

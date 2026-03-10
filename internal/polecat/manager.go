@@ -1225,8 +1225,10 @@ func forceRemoveDir(dir string) error {
 		}
 		// Make writable (0755 for dirs, 0644 for files)
 		if d.IsDir() {
+			//nolint:gosec // Controlled cleanup of a path inside the allocated polecat directory.
 			_ = os.Chmod(path, 0755)
 		} else {
+			//nolint:gosec // Controlled cleanup of a path inside the allocated polecat directory.
 			_ = os.Chmod(path, 0644)
 		}
 		return nil

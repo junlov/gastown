@@ -1329,6 +1329,7 @@ func checkWorktreeClean(t *testing.T, agent agentWorktree, hasTrackedBeads bool)
 		allowlist["?? .beads/interactions.jsonl"] = true   // Interactions log
 		allowlist["?? .beads/issues.jsonl"] = true         // Issues log
 		allowlist["?? .beads/metadata.json"] = true        // Beads metadata
+		allowlist["M .beads/metadata.json"] = true         // Tracked metadata is rewritten to the active Dolt server in tracked-beads mode
 		allowlist["?? .beads/.gt-types-configured"] = true // Custom types sentinel
 		allowlist["?? .beads/.locks/"] = true              // Beads lock files directory
 		allowlist["?? .beads/dolt-access.lock"] = true     // Dolt access lock

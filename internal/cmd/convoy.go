@@ -2033,13 +2033,26 @@ func applyFreshIssueDetails(dep *trackedDependency, details *issueDetails) {
 // getTrackedIssues uses bd dep list to get issues tracked by a convoy.
 // Returns issue details including status, type, and worker info.
 func getTrackedIssues(townBeads, convoyID string) ([]trackedIssueInfo, error) {
-	// Use bd dep list to get tracked dependencies
-	// Run from town root (parent of .beads) so bd routes correctly
 	townRoot := filepath.Dir(townBeads)
-	out, err := runBdJSON(townRoot, "dep", "list", convoyID, "--direction=down", "--type=tracks", "--json")
-	if err != nil {
-		return nil, fmt.Errorf("querying tracked issues for %s: %w", convoyID, err)
+	env := filterEnvKey(os.Environ(), "BEADS_DIR")
+	depArgs := beads.MaybePrependAllowStaleWithEnv(env, []string{
+		"dep", "list", convoyID, "--direction=down", "--type=tracks", "--json",
+	})
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("bd", depArgs...)
+	cmd.Dir = townRoot
+	cmd.Env = env
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if errMsg := strings.TrimSpace(stderr.String()); errMsg != "" {
+			return nil, fmt.Errorf("querying tracked issues for %s: bd dep: %s", convoyID, errMsg)
+		}
+		return nil, fmt.Errorf("querying tracked issues for %s: bd dep: %w", convoyID, err)
 	}
+
+	out := stdout.Bytes()
 
 	// Parse the JSON output - bd dep list returns full issue details
 	var deps []trackedDependency

@@ -47,6 +47,12 @@ func ResetBdAllowStaleCacheForTest() {
 
 // BdSupportsAllowStale returns true if the installed bd binary accepts --allow-stale.
 func BdSupportsAllowStale() bool {
+	return BdSupportsAllowStaleWithEnv(nil)
+}
+
+// BdSupportsAllowStaleWithEnv returns true if the installed bd binary accepts
+// --allow-stale, probing with the provided environment when supplied.
+func BdSupportsAllowStaleWithEnv(env []string) bool {
 	bdPath, err := exec.LookPath("bd")
 	if err != nil {
 		return false
@@ -62,6 +68,9 @@ func BdSupportsAllowStale() bool {
 	}
 
 	cmd := exec.Command(bdPath, "--allow-stale", "version") //nolint:gosec // G204: bd is a trusted internal tool
+	if env != nil {
+		cmd.Env = env
+	}
 	supported := cmd.Run() == nil
 
 	bdAllowStaleMu.Lock()
@@ -78,6 +87,15 @@ func BdSupportsAllowStale() bool {
 // Exported for use by other packages that shell out to bd directly.
 func MaybePrependAllowStale(args []string) []string {
 	if BdSupportsAllowStale() {
+		return append([]string{"--allow-stale"}, args...)
+	}
+	return args
+}
+
+// MaybePrependAllowStaleWithEnv prepends --allow-stale to args if bd supports it,
+// probing with the provided environment when supplied.
+func MaybePrependAllowStaleWithEnv(env []string, args []string) []string {
+	if BdSupportsAllowStaleWithEnv(env) {
 		return append([]string{"--allow-stale"}, args...)
 	}
 	return args
@@ -216,6 +234,7 @@ type ListOptions struct {
 type CreateOptions struct {
 	Title       string
 	Type        string   // Deprecated: use Labels instead. Was "task", "bug", "feature", "epic".
+	Label       string   // Deprecated: use Labels instead. Backward-compatible single-label form.
 	Labels      []string // Labels to set (e.g., "gt:task", "gt:merge-request")
 	Priority    int      // 0-4
 	Description string
@@ -340,20 +359,20 @@ func (b *Beads) run(args ...string) (_ []byte, retErr error) {
 	}()
 	// Conditionally use --allow-stale to prevent failures when db is temporarily stale
 	// (e.g., after daemon is killed during shutdown). Only if bd supports it.
-	fullArgs := MaybePrependAllowStale(args)
-
-	// Always explicitly set BEADS_DIR to prevent inherited env vars from
-	// causing prefix mismatches. Use explicit beadsDir if set, otherwise
-	// resolve from working directory.
 	beadsDir := b.beadsDir
 	if beadsDir == "" {
 		beadsDir = ResolveBeadsDir(b.workDir)
 	}
+	runEnv := append(b.buildRunEnv(), "BEADS_DIR="+beadsDir)
+	fullArgs := MaybePrependAllowStaleWithEnv(runEnv, args)
 
+	// Always explicitly set BEADS_DIR to prevent inherited env vars from
+	// causing prefix mismatches. Use explicit beadsDir if set, otherwise
+	// resolve from working directory.
 	cmd := exec.Command("bd", fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
 	cmd.Dir = b.workDir
 
-	cmd.Env = append(b.buildRunEnv(), "BEADS_DIR="+beadsDir)
+	cmd.Env = runEnv
 	cmd.Env = append(cmd.Env, telemetry.OTELEnvForSubprocess()...)
 
 	cmd.Stdout = &stdout
@@ -385,12 +404,13 @@ func (b *Beads) runWithRouting(args ...string) (_ []byte, retErr error) { //noli
 	defer func() {
 		telemetry.RecordBDCall(context.Background(), args, float64(time.Since(start).Milliseconds()), retErr, stdout.Bytes(), stderr.String())
 	}()
-	fullArgs := MaybePrependAllowStale(args)
+	runEnv := b.buildRoutingEnv()
+	fullArgs := MaybePrependAllowStaleWithEnv(runEnv, args)
 
 	cmd := exec.Command("bd", fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
 	cmd.Dir = b.workDir
 
-	cmd.Env = b.buildRoutingEnv()
+	cmd.Env = runEnv
 	cmd.Env = append(cmd.Env, telemetry.OTELEnvForSubprocess()...)
 
 	cmd.Stdout = &stdout
@@ -597,6 +617,15 @@ func (b *Beads) List(opts ListOptions) ([]*Issue, error) {
 	}
 
 	out, err := b.run(args...)
+	if err != nil && strings.Contains(err.Error(), "unknown flag: --flat") {
+		fallbackArgs := make([]string, 0, len(args)-1)
+		for _, arg := range args {
+			if arg != "--flat" {
+				fallbackArgs = append(fallbackArgs, arg)
+			}
+		}
+		out, err = b.run(fallbackArgs...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -799,9 +828,11 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	if opts.Title != "" {
 		args = append(args, "--title="+opts.Title)
 	}
-	// Labels takes precedence; fall back to deprecated Type conversion
+	// Labels takes precedence; fall back to deprecated single-label/Type fields.
 	if len(opts.Labels) > 0 {
 		args = append(args, "--labels="+strings.Join(opts.Labels, ","))
+	} else if opts.Label != "" {
+		args = append(args, "--labels="+opts.Label)
 	} else if opts.Type != "" {
 		args = append(args, "--labels=gt:"+opts.Type)
 	}
@@ -857,9 +888,11 @@ func (b *Beads) CreateWithID(id string, opts CreateOptions) (*Issue, error) {
 	if opts.Title != "" {
 		args = append(args, "--title="+opts.Title)
 	}
-	// Labels takes precedence; fall back to deprecated Type conversion
+	// Labels takes precedence; fall back to deprecated single-label/Type fields.
 	if len(opts.Labels) > 0 {
 		args = append(args, "--labels="+strings.Join(opts.Labels, ","))
+	} else if opts.Label != "" {
+		args = append(args, "--labels="+opts.Label)
 	} else if opts.Type != "" {
 		args = append(args, "--labels=gt:"+opts.Type)
 	}

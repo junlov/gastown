@@ -3,6 +3,7 @@ package beads
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -10,6 +11,34 @@ func installMockBDFixedShowOutput(t *testing.T, showOutput string) {
 	t.Helper()
 
 	binDir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		scriptPath := filepath.Join(binDir, "bd.cmd")
+		script := "@echo off\r\n" +
+			"setlocal EnableDelayedExpansion\r\n" +
+			"set \"cmd=\"\r\n" +
+			":findcmd\r\n" +
+			"if \"%~1\"==\"\" goto havecmd\r\n" +
+			"set \"arg=%~1\"\r\n" +
+			"if /I \"!arg:~0,2!\"==\"--\" (\r\n" +
+			"  shift\r\n" +
+			"  goto findcmd\r\n" +
+			")\r\n" +
+			"set \"cmd=%~1\"\r\n" +
+			":havecmd\r\n" +
+			"if /I \"%cmd%\"==\"version\" exit /b 0\r\n" +
+			"if /I \"%cmd%\"==\"show\" (\r\n" +
+			"  echo(%MOCK_BD_SHOW_OUTPUT%\r\n" +
+			"  exit /b 0\r\n" +
+			")\r\n" +
+			"exit /b 0\r\n"
+		if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
+			t.Fatalf("write mock bd: %v", err)
+		}
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		t.Setenv("MOCK_BD_SHOW_OUTPUT", showOutput)
+		return
+	}
+
 	script := `#!/bin/sh
 cmd=""
 for arg in "$@"; do

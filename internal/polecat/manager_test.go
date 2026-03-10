@@ -357,6 +357,7 @@ func TestClearIssueWithoutAssignment(t *testing.T) {
 func TestAddWithOptions_HasAgentsMD(t *testing.T) {
 	// This test verifies that AGENTS.md exists in polecat worktrees after creation.
 	// AGENTS.md is critical for polecats to "land the plane" properly.
+	installMockBd(t)
 
 	root := t.TempDir()
 

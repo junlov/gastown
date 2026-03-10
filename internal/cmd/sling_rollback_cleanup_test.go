@@ -3,12 +3,33 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
 )
+
+func writeRollbackCleanupBDStub(t *testing.T, binDir, unixScript, windowsScript string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		if windowsScript == "" {
+			t.Fatal("windows bd stub is required on Windows")
+		}
+		bdPath := filepath.Join(binDir, "bd.cmd")
+		if err := os.WriteFile(bdPath, []byte(windowsScript), 0644); err != nil {
+			t.Fatalf("write bd stub: %v", err)
+		}
+		return
+	}
+
+	bdPath := filepath.Join(binDir, "bd")
+	if err := os.WriteFile(bdPath, []byte(unixScript), 0755); err != nil {
+		t.Fatalf("write bd stub: %v", err)
+	}
+}
 
 // TestCleanupSpawnedPolecat_DeletesBranch verifies that cleanupSpawnedPolecat
 // attempts to delete the git branch when spawnInfo.Branch is set.
@@ -61,10 +82,7 @@ func TestCleanupSpawnedPolecat_DeletesBranch(t *testing.T) {
 	bdScript := `#!/bin/sh
 exit 0
 `
-	bdPath := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	writeRollbackCleanupBDStub(t, binDir, bdScript, "@echo off\r\nexit /b 0\r\n")
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(EnvGTRole, "mayor")
@@ -138,10 +156,7 @@ func TestCleanupSpawnedPolecat_WithEmptyBranch(t *testing.T) {
 	bdScript := `#!/bin/sh
 exit 0
 `
-	bdPath := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	writeRollbackCleanupBDStub(t, binDir, bdScript, "@echo off\r\nexit /b 0\r\n")
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(EnvGTRole, "mayor")
@@ -240,10 +255,21 @@ if [ "$cmd" = "close" ]; then
 fi
 exit 0
 `
-	bdPath := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	writeRollbackCleanupBDStub(t, binDir, bdScript,
+		"@echo off\r\n"+
+			"setlocal EnableDelayedExpansion\r\n"+
+			"set \"cmd=\"\r\n"+
+			":findcmd\r\n"+
+			"if \"%~1\"==\"\" goto havecmd\r\n"+
+			"set \"arg=%~1\"\r\n"+
+			"if /I \"!arg:~0,2!\"==\"--\" (\r\n"+
+			"  shift\r\n"+
+			"  goto findcmd\r\n"+
+			")\r\n"+
+			"set \"cmd=%~1\"\r\n"+
+			":havecmd\r\n"+
+			"if /I \"%cmd%\"==\"close\" >>\""+filepath.Join(townRoot, "bd_close.log")+"\" echo CLOSE:%*\r\n"+
+			"exit /b 0\r\n")
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(EnvGTRole, "mayor")
@@ -336,10 +362,21 @@ if [ "$cmd" = "close" ]; then
 fi
 exit 0
 `
-	bdPath := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	writeRollbackCleanupBDStub(t, binDir, bdScript,
+		"@echo off\r\n"+
+			"setlocal EnableDelayedExpansion\r\n"+
+			"set \"cmd=\"\r\n"+
+			":findcmd\r\n"+
+			"if \"%~1\"==\"\" goto havecmd\r\n"+
+			"set \"arg=%~1\"\r\n"+
+			"if /I \"!arg:~0,2!\"==\"--\" (\r\n"+
+			"  shift\r\n"+
+			"  goto findcmd\r\n"+
+			")\r\n"+
+			"set \"cmd=%~1\"\r\n"+
+			":havecmd\r\n"+
+			"if /I \"%cmd%\"==\"close\" >>\""+filepath.Join(townRoot, "bd_close.log")+"\" echo CLOSE_CALLED\r\n"+
+			"exit /b 0\r\n")
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(EnvGTRole, "mayor")
@@ -429,10 +466,25 @@ case "$cmd" in
 esac
 exit 0
 `
-	bdPath := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	writeRollbackCleanupBDStub(t, binDir, bdScript,
+		"@echo off\r\n"+
+			"setlocal EnableDelayedExpansion\r\n"+
+			"set \"cmd=\"\r\n"+
+			":findcmd\r\n"+
+			"if \"%~1\"==\"\" goto havecmd\r\n"+
+			"set \"arg=%~1\"\r\n"+
+			"if /I \"!arg:~0,2!\"==\"--\" (\r\n"+
+			"  shift\r\n"+
+			"  goto findcmd\r\n"+
+			")\r\n"+
+			"set \"cmd=%~1\"\r\n"+
+			":havecmd\r\n"+
+			"if /I \"%cmd%\"==\"update\" exit /b 0\r\n"+
+			"if /I \"%cmd%\"==\"close\" (\r\n"+
+			"  >>\""+filepath.Join(townRoot, "bd_close.log")+"\" echo CLOSE:%*\r\n"+
+			"  exit /b 0\r\n"+
+			")\r\n"+
+			"exit /b 0\r\n")
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(EnvGTRole, "mayor")
@@ -535,10 +587,21 @@ if [ "$cmd" = "close" ]; then
 fi
 exit 0
 `
-	bdPath := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	writeRollbackCleanupBDStub(t, binDir, bdScript,
+		"@echo off\r\n"+
+			"setlocal EnableDelayedExpansion\r\n"+
+			"set \"cmd=\"\r\n"+
+			":findcmd\r\n"+
+			"if \"%~1\"==\"\" goto havecmd\r\n"+
+			"set \"arg=%~1\"\r\n"+
+			"if /I \"!arg:~0,2!\"==\"--\" (\r\n"+
+			"  shift\r\n"+
+			"  goto findcmd\r\n"+
+			")\r\n"+
+			"set \"cmd=%~1\"\r\n"+
+			":havecmd\r\n"+
+			"if /I \"%cmd%\"==\"close\" >>\""+filepath.Join(townRoot, "bd_close.log")+"\" echo CLOSE_CALLED\r\n"+
+			"exit /b 0\r\n")
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(EnvGTRole, "mayor")
@@ -643,10 +706,22 @@ case "$cmd" in
 esac
 exit 0
 `
-	bdPath := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	writeRollbackCleanupBDStub(t, binDir, bdScript,
+		"@echo off\r\n"+
+			"setlocal EnableDelayedExpansion\r\n"+
+			"set \"cmd=\"\r\n"+
+			":findcmd\r\n"+
+			"if \"%~1\"==\"\" goto havecmd\r\n"+
+			"set \"arg=%~1\"\r\n"+
+			"if /I \"!arg:~0,2!\"==\"--\" (\r\n"+
+			"  shift\r\n"+
+			"  goto findcmd\r\n"+
+			")\r\n"+
+			"set \"cmd=%~1\"\r\n"+
+			":havecmd\r\n"+
+			"if /I \"%cmd%\"==\"update\" exit /b 0\r\n"+
+			"if /I \"%cmd%\"==\"close\" exit /b 0\r\n"+
+			"exit /b 0\r\n")
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(EnvGTRole, "mayor")
@@ -691,4 +766,3 @@ exit 0
 	// which is expected in a test environment
 	t.Logf("rollbackSlingArtifacts completed and called cleanupSpawnedPolecat")
 }
-

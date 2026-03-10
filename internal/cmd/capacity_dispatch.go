@@ -304,9 +304,12 @@ func batchFetchBeadInfoByIDs(townRoot string, ids []string) map[string]beadStatu
 	// For simplicity, try all dirs - bd show will return results only for matching IDs
 	for _, dir := range beadsSearchDirs(townRoot) {
 		// bd show can accept multiple IDs
+		env := filterEnvKey(os.Environ(), "BEADS_DIR")
 		args := append([]string{"show", "--json"}, ids...)
-		showCmd := exec.Command("bd", args...)
+		showArgs := beads.MaybePrependAllowStaleWithEnv(env, args)
+		showCmd := exec.Command("bd", showArgs...)
 		showCmd.Dir = dir
+		showCmd.Env = env
 		out, err := showCmd.Output()
 		if err != nil {
 			continue
@@ -490,8 +493,11 @@ func listReadyWorkBeadIDsWithError(townRoot string) (map[string]bool, error) {
 	failCount := 0
 	var lastErr error
 	for _, dir := range dirs {
-		readyCmd := exec.Command("bd", "ready", "--json", "--limit=0")
+		env := filterEnvKey(os.Environ(), "BEADS_DIR")
+		readyArgs := beads.MaybePrependAllowStaleWithEnv(env, []string{"ready", "--json", "--limit=0"})
+		readyCmd := exec.Command("bd", readyArgs...)
 		readyCmd.Dir = dir
+		readyCmd.Env = env
 		readyOut, err := readyCmd.Output()
 		if err != nil {
 			failCount++
@@ -524,4 +530,3 @@ func listReadyWorkBeadIDs(townRoot string) map[string]bool {
 	}
 	return ids
 }
-

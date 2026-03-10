@@ -41,6 +41,10 @@ func TestCreateBatchConvoy_CreatesOneConvoyTrackingAllBeads(t *testing.T) {
 	bdScript := `#!/bin/sh
 echo "CMD:$*" >> "` + logPath + `"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   create)
@@ -344,6 +348,10 @@ func TestCreateBatchConvoy_PartialDepFailureContinues(t *testing.T) {
 	bdScript := `#!/bin/sh
 echo "CMD:$*" >> "` + logPath + `"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   create)
@@ -451,6 +459,10 @@ func TestBatchSling_ErrorsOnAlreadyTrackedBead(t *testing.T) {
 	// empty results for everything else.
 	bdScript := `#!/bin/sh
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 
 case "$cmd" in
@@ -679,6 +691,10 @@ func TestBatchSling_EmptyConvoyCleanupOnAllFailures(t *testing.T) {
 	// Stub bd: handles close and logs it
 	bdScript := `#!/bin/sh
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   close)
@@ -921,6 +937,10 @@ func TestCreateAutoConvoy_DepFailCleansUpOrphan(t *testing.T) {
 	bdScript := `#!/bin/sh
 echo "CMD:$*" >> "LOGPATH"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   create)
@@ -1121,6 +1141,10 @@ func TestBatchSling_CrossRigGuardRejectsPrefix(t *testing.T) {
 	// Stub bd: show succeeds (verifyBeadExists), everything else succeeds
 	bdScript := `#!/bin/sh
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   show)
@@ -1251,6 +1275,10 @@ func TestCreateBatchConvoy_ReturnsTrackedBeadSet(t *testing.T) {
 	// Stub bd: create succeeds, dep add fails for gt-bbb only
 	bdScript := `#!/bin/sh
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   create) exit 0 ;;
@@ -1407,6 +1435,10 @@ func TestFindConvoyByDescription_MatchesDescriptionPattern(t *testing.T) {
 	bdScript := fmt.Sprintf(`#!/bin/sh
 echo "CMD:$*" >> "%s"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   list)
@@ -1440,6 +1472,10 @@ func TestFindConvoyByDescription_NoMatch(t *testing.T) {
 	bdScript := fmt.Sprintf(`#!/bin/sh
 echo "CMD:$*" >> "%s"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   list)
@@ -1478,6 +1514,10 @@ func TestFindConvoyByDescription_FallsBackToTrackedDeps(t *testing.T) {
 	bdScript := fmt.Sprintf(`#!/bin/sh
 echo "CMD:$*" >> "%s"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   list)
@@ -1519,6 +1559,10 @@ func TestIsTrackedByConvoy_FoundViaDepList(t *testing.T) {
 	bdScript := fmt.Sprintf(`#!/bin/sh
 echo "CMD:$*" >> "%s"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   dep)
@@ -1551,6 +1595,10 @@ func TestIsTrackedByConvoy_NotFound(t *testing.T) {
 	bdScript := fmt.Sprintf(`#!/bin/sh
 echo "CMD:$*" >> "%s"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   dep)
@@ -1598,6 +1646,10 @@ func TestPrintConvoyConflict_PrintsConflictInfo(t *testing.T) {
 	bdScript := fmt.Sprintf(`#!/bin/sh
 echo "CMD:$*" >> "%s"
 cmd="$1"
+if [ "$cmd" = "--allow-stale" ]; then
+  shift || true
+  cmd="$1"
+fi
 shift || true
 case "$cmd" in
   show)

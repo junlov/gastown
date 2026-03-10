@@ -95,11 +95,17 @@ func firstArg(args []string) string {
 }
 
 // bdReadCtx returns a context with the standard bd read timeout.
+//
+//nolint:gosec // The cancel function is returned to callers, who are responsible for invoking it.
 func bdReadCtx() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), bdReadTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), bdReadTimeout)
+	return ctx, cancel
 }
 
 // bdWriteCtx returns a context with the standard bd write timeout.
+//
+//nolint:gosec // The cancel function is returned to callers, who are responsible for invoking it.
 func bdWriteCtx() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), bdWriteTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), bdWriteTimeout)
+	return ctx, cancel
 }
