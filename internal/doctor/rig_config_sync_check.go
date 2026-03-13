@@ -335,7 +335,9 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 		mayorRigPath := filepath.Join(rigPath, "mayor", "rig")
 
 		// Run bd init --prefix <prefix> --force to create the database
-		cmd := exec.Command("bd", "init", "--prefix", entry.BeadsConfig.Prefix, "--force")
+		// bd v0.60.0+ requires --destroy-token for non-interactive --force
+		destroyToken := fmt.Sprintf("DESTROY-%s", entry.BeadsConfig.Prefix)
+		cmd := exec.Command("bd", "init", "--prefix", entry.BeadsConfig.Prefix, "--force", "--destroy-token="+destroyToken)
 		cmd.Dir = mayorRigPath
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("could not initialize Dolt DB for %s: %w\n%s", rigName, err, string(output))
