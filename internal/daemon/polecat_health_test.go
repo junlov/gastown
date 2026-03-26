@@ -169,19 +169,19 @@ func TestCheckPolecatHealth_SpawningGuardExpires(t *testing.T) {
 	}
 }
 
-// TestCheckPolecatHealth_DBStateOverridesDescription verifies that the daemon
-// reads agent_state from the DB column (source of truth), not the description
-// text. UpdateAgentState updates the DB column but not the description, so a
-// polecat that transitioned from "spawning" to "working" will have stale
-// description text. The DB column must be authoritative.
-func TestCheckPolecatHealth_DBStateOverridesDescription(t *testing.T) {
+// TestCheckPolecatHealth_DescriptionStateOverridesLegacyDBColumn verifies that
+// daemon lifecycle reads the description's agent_state first. bd >= 0.62.0 no
+// longer has a supported structured agent_state writer, so the description is
+// Gastown's active contract and the DB column is legacy fallback only.
+func TestCheckPolecatHealth_DescriptionStateOverridesLegacyDBColumn(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses Unix shell script mocks for tmux and bd")
 	}
 	binDir := t.TempDir()
 	writeFakeTestTmux(t, binDir)
 	recentTime := time.Now().UTC().Format(time.RFC3339)
-	// Description says "spawning" (stale) but DB column says "working" (truth)
+	// Description says "spawning" (current Gastown contract) while the legacy
+	// structured column still says "working".
 	bdPath := writeFakeTestBD(t, binDir, "spawning", "working", "gt-xyz", recentTime)
 
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
@@ -197,13 +197,11 @@ func TestCheckPolecatHealth_DBStateOverridesDescription(t *testing.T) {
 	d.checkPolecatHealth("myr", "mycat")
 
 	got := logBuf.String()
-	// Should NOT skip due to spawning guard — DB says "working"
-	if strings.Contains(got, "Skipping restart") {
-		t.Errorf("daemon should use DB agent_state (working), not stale description (spawning), got: %q", got)
+	if !strings.Contains(got, "spawning") {
+		t.Errorf("expected log to mention description-backed spawning state, got: %q", got)
 	}
-	// Should detect crash since DB says working + session is dead
-	if !strings.Contains(got, "CRASH DETECTED") {
-		t.Errorf("expected CRASH DETECTED when DB state is 'working' with dead session, got: %q", got)
+	if strings.Contains(got, "CRASH DETECTED") {
+		t.Errorf("daemon should honor description state 'spawning' and skip crash detection, got: %q", got)
 	}
 }
 

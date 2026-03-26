@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -553,6 +554,7 @@ func (b *Beads) buildRunEnv() []string {
 		return env
 	}
 	env := stripEnvPrefixes(os.Environ(), "BEADS_DIR=")
+	env = overrideDoltEnvFromBeadsDir(env, b.getResolvedBeadsDir())
 	return translateDoltPort(env)
 }
 
@@ -569,6 +571,7 @@ func (b *Beads) buildRoutingEnv() []string {
 		return env
 	}
 	env := stripEnvPrefixes(os.Environ(), "BEADS_DIR=")
+	env = overrideDoltEnvFromBeadsDir(env, b.getResolvedBeadsDir())
 	return translateDoltPort(env)
 }
 
@@ -633,6 +636,55 @@ func translateDoltPort(env []string) []string {
 		env = append(env, "BEADS_DOLT_SERVER_HOST="+gtHost)
 	}
 	return env
+}
+
+// overrideDoltEnvFromBeadsDir replaces inherited BEADS_DOLT_* values with the
+// authoritative connection data for the selected beads directory when present.
+// This prevents a parent shell's stale Dolt port from routing bd commands to
+// the wrong server when the command explicitly targets another rig's .beads dir.
+func overrideDoltEnvFromBeadsDir(env []string, beadsDir string) []string {
+	port, host := doltConnectionFromBeadsDir(beadsDir)
+	if port != "" {
+		env = stripEnvPrefixes(env, "BEADS_DOLT_PORT=")
+		env = append(env, "BEADS_DOLT_PORT="+port)
+	}
+	if host != "" {
+		env = stripEnvPrefixes(env, "BEADS_DOLT_SERVER_HOST=")
+		env = append(env, "BEADS_DOLT_SERVER_HOST="+host)
+	}
+	return env
+}
+
+// doltConnectionFromBeadsDir reads the preferred Dolt connection info for a
+// beads directory. The per-directory port file is authoritative when present;
+// metadata.json is used as a fallback and to supply the server host.
+func doltConnectionFromBeadsDir(beadsDir string) (port string, host string) {
+	if beadsDir == "" {
+		return "", ""
+	}
+
+	if data, err := os.ReadFile(filepath.Join(beadsDir, "dolt-server.port")); err == nil {
+		port = strings.TrimSpace(string(data))
+	}
+
+	data, err := os.ReadFile(filepath.Join(beadsDir, "metadata.json"))
+	if err != nil {
+		return port, ""
+	}
+
+	var meta struct {
+		DoltServerPort int    `json:"dolt_server_port"`
+		DoltServerHost string `json:"dolt_server_host"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return port, ""
+	}
+
+	if port == "" && meta.DoltServerPort > 0 {
+		port = strconv.Itoa(meta.DoltServerPort)
+	}
+	host = strings.TrimSpace(meta.DoltServerHost)
+	return port, host
 }
 
 // stripEnvPrefixes removes entries matching any of the given prefixes from an

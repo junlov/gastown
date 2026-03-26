@@ -120,15 +120,15 @@ type DNDInfo struct {
 
 // AgentRuntime represents the runtime state of an agent.
 type AgentRuntime struct {
-	Name         string `json:"name"`                    // Display name (e.g., "mayor", "witness")
-	Address      string `json:"address"`                 // Full address (e.g., "greenplace/witness")
-	Session      string `json:"session"`                 // tmux session name
-	Role         string `json:"role"`                    // Role type
-	Running      bool   `json:"running"`                 // Is tmux session running?
-	ACP          bool   `json:"acp"`                     // Is ACP session active?
-	HasWork      bool   `json:"has_work"`                // Has pinned work?
-	WorkTitle    string `json:"work_title,omitempty"`    // Title of pinned work
-	HookBead     string `json:"hook_bead,omitempty"`     // Pinned bead ID from agent bead
+	Name              string `json:"name"`                         // Display name (e.g., "mayor", "witness")
+	Address           string `json:"address"`                      // Full address (e.g., "greenplace/witness")
+	Session           string `json:"session"`                      // tmux session name
+	Role              string `json:"role"`                         // Role type
+	Running           bool   `json:"running"`                      // Is tmux session running?
+	ACP               bool   `json:"acp"`                          // Is ACP session active?
+	HasWork           bool   `json:"has_work"`                     // Has pinned work?
+	WorkTitle         string `json:"work_title,omitempty"`         // Title of pinned work
+	HookBead          string `json:"hook_bead,omitempty"`          // Pinned bead ID from agent bead
 	State             string `json:"state,omitempty"`              // Agent state from agent bead
 	NotificationLevel string `json:"notification_level,omitempty"` // Notification level (verbose, normal, muted)
 	UnreadMail        int    `json:"unread_mail"`                  // Number of unread messages
@@ -1594,7 +1594,7 @@ func discoverGlobalAgents(townRoot string, allSessions map[string]bool, allAgent
 				// Prefer database columns over description parsing
 				// HookBead column is authoritative (cleared by unsling)
 				agent.HookBead = issue.HookBead
-				agent.State = issue.AgentState
+				agent.State = beads.ResolveAgentState(issue.Description, issue.AgentState)
 				if agent.HookBead != "" {
 					agent.HasWork = true
 					// Get hook title from preloaded map
@@ -1604,9 +1604,6 @@ func discoverGlobalAgents(townRoot string, allSessions map[string]bool, allAgent
 				}
 				// Parse description fields for legacy slots (and notification level)
 				if fields := beads.ParseAgentFields(issue.Description); fields != nil {
-					if agent.State == "" {
-						agent.State = fields.AgentState
-					}
 					agent.NotificationLevel = fields.NotificationLevel
 				}
 			}
@@ -1772,7 +1769,7 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 				// Prefer database columns over description parsing
 				// HookBead column is authoritative (cleared by unsling)
 				agent.HookBead = issue.HookBead
-				agent.State = issue.AgentState
+				agent.State = beads.ResolveAgentState(issue.Description, issue.AgentState)
 				if agent.HookBead != "" {
 					agent.HasWork = true
 					// Get hook title from preloaded map
@@ -1782,9 +1779,6 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 				}
 				// Parse description fields for legacy slots (and notification level)
 				if fields := beads.ParseAgentFields(issue.Description); fields != nil {
-					if agent.State == "" {
-						agent.State = fields.AgentState
-					}
 					agent.NotificationLevel = fields.NotificationLevel
 				}
 			}

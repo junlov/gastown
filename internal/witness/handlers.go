@@ -1774,12 +1774,12 @@ func processDiscoveredCompletion(bd *BdCli, workDir, rigName string, payload *Po
 // Used to avoid redundant subprocess invocations during zombie detection, where the same
 // agent bead was previously queried 3-5 times per polecat per patrol cycle. (gt-2gra)
 type agentBeadSnapshot struct {
-	AgentState  string
-	HookBead    string
-	Labels      []string
-	UpdatedAt   string
-	ActiveMR    string
-	Fields      *beads.AgentFields // parsed from description
+	AgentState string
+	HookBead   string
+	Labels     []string
+	UpdatedAt  string
+	ActiveMR   string
+	Fields     *beads.AgentFields // parsed from description
 }
 
 // fetchAgentBeadSnapshot fetches all agent bead data in a single bd show call.
@@ -1803,7 +1803,7 @@ func fetchAgentBeadSnapshot(bd *BdCli, workDir, agentBeadID string) *agentBeadSn
 	}
 
 	return &agentBeadSnapshot{
-		AgentState: issues[0].AgentState,
+		AgentState: beads.ResolveAgentState(issues[0].Description, issues[0].AgentState),
 		HookBead:   issues[0].HookBead,
 		Labels:     issues[0].Labels,
 		UpdatedAt:  issues[0].UpdatedAt,
@@ -1899,14 +1899,15 @@ func getAgentBeadState(bd *BdCli, workDir, agentBeadID string) (agentState, hook
 
 	// Parse JSON response — bd show --json returns an array
 	var issues []struct {
-		AgentState string `json:"agent_state"`
-		HookBead   string `json:"hook_bead"`
+		AgentState  string `json:"agent_state"`
+		HookBead    string `json:"hook_bead"`
+		Description string `json:"description"`
 	}
 	if err := json.Unmarshal([]byte(output), &issues); err != nil || len(issues) == 0 {
 		return "", ""
 	}
 
-	return issues[0].AgentState, issues[0].HookBead
+	return beads.ResolveAgentState(issues[0].Description, issues[0].AgentState), issues[0].HookBead
 }
 
 // getAgentBeadAge returns the time since the agent bead was last updated.
@@ -1958,13 +1959,13 @@ func getBeadStatus(bd *BdCli, workDir, beadID string) string {
 
 // resetAbandonedBead resets a dead polecat's hooked bead so it can be re-dispatched.
 // If the bead is in "hooked" or "in_progress" status, it:
-// 0. Checks if the polecat's work is already on main — if so, closes
-//    the bead instead of resetting (prevents re-dispatch of completed work)
-// 1. Records the respawn in the witness spawn-count ledger
-// 2. Resets status to open
-// 3. Clears assignee
-// 4. Sends mail to deacon for re-dispatch (includes respawn count; SPAWN_STORM
-//    prefix and Urgent priority when count exceeds max bead respawns config)
+//  0. Checks if the polecat's work is already on main — if so, closes
+//     the bead instead of resetting (prevents re-dispatch of completed work)
+//  1. Records the respawn in the witness spawn-count ledger
+//  2. Resets status to open
+//  3. Clears assignee
+//  4. Sends mail to deacon for re-dispatch (includes respawn count; SPAWN_STORM
+//     prefix and Urgent priority when count exceeds max bead respawns config)
 //
 // Returns true if the bead was recovered.
 func resetAbandonedBead(bd *BdCli, workDir, rigName, hookBead, polecatName string, router *mail.Router) bool {
