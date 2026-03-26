@@ -451,6 +451,112 @@ func TestDrainSweepsOrphanedClaims(t *testing.T) {
 	}
 }
 
+func TestInspectQueueClassifiesRetainedAndStale(t *testing.T) {
+	townRoot := t.TempDir()
+	session := "gt-test-inspect"
+	dir := filepath.Join(townRoot, ".runtime", "nudge_queue", session)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Enqueue(townRoot, session, QueuedNudge{
+		Sender:  "ready",
+		Message: "deliver now",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Enqueue(townRoot, session, QueuedNudge{
+		Sender:       "later",
+		Message:      "deliver later",
+		DeliverAfter: time.Now().Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Enqueue(townRoot, session, QueuedNudge{
+		Sender:    "expired",
+		Message:   "too old",
+		ExpiresAt: time.Now().Add(-10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("not-json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	staleClaimPath := filepath.Join(dir, "stale.json.claimed.deadbeef")
+	if err := os.WriteFile(staleClaimPath, []byte(`{"sender":"ghost","message":"hi"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(staleClaimPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := InspectQueue(townRoot, session)
+	if err != nil {
+		t.Fatalf("InspectQueue: %v", err)
+	}
+	if stats.Ready != 1 || stats.Deferred != 1 || stats.Expired != 1 || stats.Malformed != 1 || stats.StaleClaims != 1 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestPruneQueueRemovesOnlyUndeliverableEntries(t *testing.T) {
+	townRoot := t.TempDir()
+	session := "gt-test-prune"
+	dir := filepath.Join(townRoot, ".runtime", "nudge_queue", session)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Enqueue(townRoot, session, QueuedNudge{
+		Sender:  "ready",
+		Message: "keep ready",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Enqueue(townRoot, session, QueuedNudge{
+		Sender:       "later",
+		Message:      "keep deferred",
+		DeliverAfter: time.Now().Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Enqueue(townRoot, session, QueuedNudge{
+		Sender:    "expired",
+		Message:   "drop expired",
+		ExpiresAt: time.Now().Add(-10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("not-json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	staleClaimPath := filepath.Join(dir, "stale.json.claimed.deadbeef")
+	if err := os.WriteFile(staleClaimPath, []byte(`{"sender":"ghost","message":"rescue"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(staleClaimPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := PruneQueue(townRoot, session)
+	if err != nil {
+		t.Fatalf("PruneQueue: %v", err)
+	}
+	if result.RemovedExpired != 1 || result.RemovedBadJSON != 1 || result.RequeuedClaims != 1 {
+		t.Fatalf("unexpected prune result: %+v", result)
+	}
+
+	stats, err := InspectQueue(townRoot, session)
+	if err != nil {
+		t.Fatalf("InspectQueue after prune: %v", err)
+	}
+	if stats.Ready != 2 || stats.Deferred != 1 || stats.Expired != 0 || stats.Malformed != 0 || stats.StaleClaims != 0 {
+		t.Fatalf("unexpected post-prune stats: %+v", stats)
+	}
+}
+
 func TestConcurrentEnqueueNoDuplicateLoss(t *testing.T) {
 	townRoot := t.TempDir()
 	session := "gt-test-concurrent"

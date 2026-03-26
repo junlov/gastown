@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/events"
-	"github.com/steveyegge/gastown/internal/lock"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/style"
@@ -401,7 +400,7 @@ func runSling(cmd *cobra.Command, args []string) (retErr error) {
 			DryRun:      slingDryRun,
 			Force:       slingForce,
 			NoMerge:     slingNoMerge,
-				ReviewOnly:  slingReviewOnly,
+			ReviewOnly:  slingReviewOnly,
 			Account:     slingAccount,
 			Agent:       slingAgent,
 			HookRawBead: slingHookRawBead,
@@ -1092,19 +1091,21 @@ func restorePinnedBead(townRoot, beadID, assignee string) {
 }
 
 func tryAcquireSlingBeadLock(townRoot, beadID string) (func(), error) {
-	lockDir := filepath.Join(townRoot, ".runtime", "locks", "sling")
+	lockDir := slingLockDir(townRoot)
 	if err := os.MkdirAll(lockDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating sling lock dir: %w", err)
 	}
 
-	safeBeadID := strings.NewReplacer("/", "_", ":", "_").Replace(beadID)
-	lockPath := filepath.Join(lockDir, safeBeadID+".flock")
-	release, locked, err := lock.FlockTryAcquire(lockPath)
+	lockPath := slingLockPathForBead(townRoot, beadID)
+	release, locked, err := tryAcquireSlingLock(lockPath, slingLockInfo{
+		Kind:    slingLockKindBead,
+		Subject: beadID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("acquiring sling lock for bead %s: %w", beadID, err)
 	}
 	if !locked {
-		return nil, fmt.Errorf("bead %s is already being slung; retry after the current assignment completes", beadID)
+		return nil, fmt.Errorf("bead %s is already being slung (%s)", beadID, describeContendedSlingLock(lockPath))
 	}
 
 	return release, nil
@@ -1118,20 +1119,22 @@ func tryAcquireSlingBeadLock(townRoot, beadID string) (func(), error) {
 // indefinite blocking if a sling gets stuck.
 // See: https://github.com/steveyegge/gastown/issues/3114
 func tryAcquireSlingAssigneeLock(townRoot, targetAgent string) (func(), error) {
-	lockDir := filepath.Join(townRoot, ".runtime", "locks", "sling")
+	lockDir := slingLockDir(townRoot)
 	if err := os.MkdirAll(lockDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating sling lock dir: %w", err)
 	}
 
-	safeAgent := strings.NewReplacer("/", "_", ":", "_").Replace(targetAgent)
-	lockPath := filepath.Join(lockDir, "assignee_"+safeAgent+".flock")
+	lockPath := slingLockPathForAssignee(townRoot, targetAgent)
 
 	// Try non-blocking acquire with retry. hookBeadWithRetry itself has 10 retries
 	// with up to 30s backoff, so we allow generous total wait time for the lock.
 	const maxAttempts = 20
 	const retryInterval = 500 // milliseconds
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		release, locked, err := lock.FlockTryAcquire(lockPath)
+		release, locked, err := tryAcquireSlingLock(lockPath, slingLockInfo{
+			Kind:    slingLockKindAssignee,
+			Subject: targetAgent,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("acquiring assignee sling lock for %s: %w", targetAgent, err)
 		}
@@ -1143,7 +1146,7 @@ func tryAcquireSlingAssigneeLock(townRoot, targetAgent string) (func(), error) {
 		}
 	}
 
-	return nil, fmt.Errorf("timed out acquiring assignee sling lock for %s after %ds (another sling may be stuck)", targetAgent, maxAttempts*retryInterval/1000)
+	return nil, fmt.Errorf("timed out acquiring assignee sling lock for %s after %ds (%s)", targetAgent, maxAttempts*retryInterval/1000, describeContendedSlingLock(lockPath))
 }
 
 // rollbackSlingArtifacts cleans up artifacts left by a partial sling when session start fails.

@@ -70,6 +70,29 @@ type QueuedNudge struct {
 	DeliverAfter time.Time `json:"deliver_after,omitempty"`
 }
 
+// QueueStats describes the operator-visible state of a session's nudge queue.
+type QueueStats struct {
+	Ready       int `json:"ready"`
+	Deferred    int `json:"deferred"`
+	Expired     int `json:"expired"`
+	Malformed   int `json:"malformed"`
+	StaleClaims int `json:"stale_claims"`
+	FreshClaims int `json:"fresh_claims"`
+}
+
+// Retained returns the entries worth keeping for eventual delivery.
+func (s QueueStats) Retained() int {
+	return s.Ready + s.Deferred
+}
+
+// PruneResult reports what a maintenance pass changed.
+type PruneResult struct {
+	Before         QueueStats `json:"before"`
+	RemovedExpired int        `json:"removed_expired"`
+	RemovedBadJSON int        `json:"removed_bad_json"`
+	RequeuedClaims int        `json:"requeued_claims"`
+}
+
 // queueDir returns the nudge queue directory for a given session.
 // Path: <townRoot>/.runtime/nudge_queue/<session>/
 func queueDir(townRoot, session string) string {
@@ -150,6 +173,27 @@ func Requeue(townRoot, session string, nudges []QueuedNudge) error {
 		}
 	}
 	return nil
+}
+
+// InspectQueue classifies a session's queued nudge files without mutating them.
+// This is intended for operator reporting and maintenance decisions.
+func InspectQueue(townRoot, session string) (QueueStats, error) {
+	return inspectQueue(townRoot, session, false)
+}
+
+// PruneQueue removes entries that are already undeliverable (expired or malformed)
+// and requeues stale .claimed files for later delivery.
+func PruneQueue(townRoot, session string) (PruneResult, error) {
+	before, err := inspectQueue(townRoot, session, true)
+	if err != nil {
+		return PruneResult{}, err
+	}
+	return PruneResult{
+		Before:         before,
+		RemovedExpired: before.Expired,
+		RemovedBadJSON: before.Malformed,
+		RequeuedClaims: before.StaleClaims,
+	}, nil
 }
 
 // Drain reads and removes all queued nudges for a session, returning them
@@ -276,6 +320,90 @@ func Drain(townRoot, session string) ([]QueuedNudge, error) {
 	}
 
 	return nudges, nil
+}
+
+func inspectQueue(townRoot, session string, repair bool) (QueueStats, error) {
+	dir := queueDir(townRoot, session)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return QueueStats{}, nil
+		}
+		return QueueStats{}, fmt.Errorf("reading nudge queue: %w", err)
+	}
+
+	staleThreshold := nudgeConfig(townRoot).StaleClaimThresholdD()
+	now := time.Now()
+	var stats QueueStats
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		path := filepath.Join(dir, name)
+
+		if strings.Contains(name, ".claimed") {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if now.Sub(info.ModTime()) > staleThreshold {
+				stats.StaleClaims++
+				if repair {
+					claimedIdx := strings.Index(name, ".claimed")
+					restoredPath := filepath.Join(dir, name[:claimedIdx])
+					if err := os.Rename(path, restoredPath); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to requeue orphaned claim %s: %v\n", name, err)
+					}
+				}
+			} else {
+				stats.FreshClaims++
+			}
+			continue
+		}
+
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return QueueStats{}, fmt.Errorf("reading nudge entry %s: %w", name, err)
+		}
+
+		var n QueuedNudge
+		if err := json.Unmarshal(data, &n); err != nil {
+			stats.Malformed++
+			if repair {
+				if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
+					return QueueStats{}, fmt.Errorf("removing malformed nudge %s: %w", name, rmErr)
+				}
+			}
+			continue
+		}
+
+		if !n.ExpiresAt.IsZero() && now.After(n.ExpiresAt) {
+			stats.Expired++
+			if repair {
+				if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
+					return QueueStats{}, fmt.Errorf("removing expired nudge %s: %w", name, rmErr)
+				}
+			}
+			continue
+		}
+
+		if !n.DeliverAfter.IsZero() && now.Before(n.DeliverAfter) {
+			stats.Deferred++
+			continue
+		}
+
+		stats.Ready++
+	}
+
+	return stats, nil
 }
 
 // Pending returns the count of queued nudges for a session without draining.
