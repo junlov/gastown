@@ -432,14 +432,15 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 			}
 		}
 
-		// Check no_merge flag on the hooked bead. When set, this is a non-code
-		// task (email, research, API calls) where zero commits is expected.
-		// Must be checked before the zero-commit guard below (GH#2496).
+		// Check no_merge or review_only flags on the hooked bead. When set,
+		// this is a non-code task (email, research, analysis, PRD review)
+		// where zero commits is expected.
+		// Must be checked before the zero-commit guard below (GH#2496, gt-kvf).
 		isNoMergeTask := false
 		if issueID != "" {
 			noMergeBd := beads.New(cwd)
 			if noMergeIssue, showErr := noMergeBd.Show(issueID); showErr == nil {
-				if af := beads.ParseAttachmentFields(noMergeIssue); af != nil && af.NoMerge {
+				if af := beads.ParseAttachmentFields(noMergeIssue); af != nil && (af.NoMerge || af.ReviewOnly) {
 					isNoMergeTask = true
 				}
 			}
@@ -450,7 +451,7 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 		// implementation without writing code (gastown#1484, beads#emma).
 		// The --cleanup-status=clean escape is preserved for legitimate report-only
 		// tasks (audits, reviews) that the formula explicitly directs to use it.
-		// no_merge tasks (GH#2496) also bypass: non-code work has no commits by design.
+		// no_merge/review_only tasks (GH#2496, gt-kvf) also bypass: non-code work has no commits by design.
 		// IMPORTANT: The error message must NOT mention --cleanup-status=clean.
 		// LLM agents read error messages and self-bypass (the original bug).
 		if aheadCount == 0 {
