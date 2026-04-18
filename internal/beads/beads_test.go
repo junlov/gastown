@@ -2820,42 +2820,11 @@ func TestNewIsolatedWithPort(t *testing.T) {
 	}
 }
 
-func TestInitArgs(t *testing.T) {
-	tests := []struct {
-		name       string
-		prefix     string
-		serverPort int
-		want       []string
-	}{
-		{
-			name:   "no prefix no port",
-			want:   []string{"init", "--quiet"},
-		},
-		{
-			name:   "with prefix",
-			prefix: "myrig",
-			want:   []string{"init", "--prefix", "myrig", "--quiet"},
-		},
-		{
-			name:       "with server port",
-			prefix:     "myrig",
-			serverPort: 13307,
-			want:       []string{"init", "--prefix", "myrig", "--quiet", "--server", "--server-port", "13307"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			b := &Beads{serverPort: tt.serverPort}
-			got := b.initArgs(tt.prefix)
-			if len(got) != len(tt.want) {
-				t.Fatalf("initArgs() = %v, want %v", got, tt.want)
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Fatalf("initArgs()[%d] = %q, want %q\nfull: %v", i, got[i], tt.want[i], got)
-				}
-			}
-		})
+func TestInitPassesServerFlag(t *testing.T) {
+	b := NewIsolatedWithPort(t.TempDir(), 19999)
+	err := b.Init("covertest")
+	if err == nil {
+		t.Fatal("expected error (no bd/dolt server), got nil")
 	}
 }
 

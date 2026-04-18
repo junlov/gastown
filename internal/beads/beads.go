@@ -391,8 +391,11 @@ func (b *Beads) getResolvedBeadsDir() string {
 	return ResolveBeadsDir(b.workDir)
 }
 
-// initArgs builds the argument list for bd init.
-func (b *Beads) initArgs(prefix string) []string {
+// Init initializes a new beads database in the working directory.
+// This uses the same environment isolation as other commands.
+// If ServerPort is set (via NewIsolatedWithPort), passes --server-port to bd init
+// so the database is created on the test Dolt server.
+func (b *Beads) Init(prefix string) error {
 	args := []string{"init"}
 	if prefix != "" {
 		args = append(args, "--prefix", prefix)
@@ -401,15 +404,7 @@ func (b *Beads) initArgs(prefix string) []string {
 	if b.serverPort > 0 {
 		args = append(args, "--server", "--server-port", fmt.Sprintf("%d", b.serverPort))
 	}
-	return args
-}
-
-// Init initializes a new beads database in the working directory.
-// This uses the same environment isolation as other commands.
-// If ServerPort is set (via NewIsolatedWithPort), passes --server-port to bd init
-// so the database is created on the test Dolt server.
-func (b *Beads) Init(prefix string) error {
-	_, err := b.run(b.initArgs(prefix)...)
+	_, err := b.run(args...)
 	return err
 }
 
