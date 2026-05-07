@@ -118,7 +118,7 @@ the rig's settings/config.json under workflow.default_formula.
 
 Options:
   --pr=N        Run formula on GitHub PR #N
-  --rig=NAME    Target specific rig (default: current or gastown)
+  --rig=NAME    Target specific rig (default: inferred from cwd, or sole registered rig)
   --agent=ALIAS Override agent/runtime for all legs (e.g., gemini, codex)
   --dry-run     Show what would happen without executing
 
@@ -169,7 +169,7 @@ func init() {
 
 	// Run flags
 	formulaRunCmd.Flags().IntVar(&formulaRunPR, "pr", 0, "GitHub PR number to run formula on")
-	formulaRunCmd.Flags().StringVar(&formulaRunRig, "rig", "", "Target rig (default: current or gastown)")
+	formulaRunCmd.Flags().StringVar(&formulaRunRig, "rig", "", "Target rig (default: inferred from cwd, or sole registered rig)")
 	formulaRunCmd.Flags().BoolVar(&formulaRunDryRun, "dry-run", false, "Preview execution without running")
 	formulaRunCmd.Flags().StringVar(&formulaRunAgent, "agent", "", "Override agent/runtime for all legs (e.g., gemini, codex, claude-haiku)")
 	formulaRunCmd.Flags().StringSliceVar(&formulaRunFiles, "files", nil, "Files to pass to formula legs (available as {{.files}} in templates)")
@@ -232,14 +232,20 @@ func runFormulaRun(cmd *cobra.Command, args []string) error {
 					rigPath = r.Path
 				}
 			}
-			// If we still don't have a target rig but have townRoot, use gastown
+			// Still no rig — auto-select when there is exactly one registered rig,
+			// otherwise surface a helpful error (e.g. Deacon at HQ level on
+			// non-default installs where "gastown" rig does not exist).
 			if targetRig == "" {
-				targetRig = "gastown"
-				rigPath = filepath.Join(townRoot, "gastown")
+				name, path, inferErr := autoInferRig(townRoot)
+				if inferErr != nil {
+					return inferErr
+				}
+				targetRig = name
+				rigPath = path
 			}
 		} else {
-			// No town root found, fall back to gastown without rigPath
-			targetRig = "gastown"
+			// No town root found, cannot determine target rig
+			return fmt.Errorf("cannot determine target rig: not in a Gas Town workspace; use --rig=NAME")
 		}
 	} else {
 		// If rig specified, construct path

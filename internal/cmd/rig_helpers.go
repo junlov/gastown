@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
@@ -158,6 +159,38 @@ func rigBeadsPrefix(townRoot, rigPath, rigName string) string {
 	}
 
 	return ""
+}
+
+// autoInferRig returns the sole registered rig for a given townRoot, or an
+// actionable error when the result is ambiguous. Callers use this when no
+// --rig flag was provided and cwd-based detection found nothing (e.g. Deacon
+// at HQ level on a non-default install where "gastown" rig does not exist).
+func autoInferRig(townRoot string) (name, path string, err error) {
+	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	rigsConfig, loadErr := config.LoadRigsConfig(rigsConfigPath)
+	if loadErr != nil {
+		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
+	}
+
+	g := git.NewGit(townRoot)
+	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
+	rigs, err := rigMgr.DiscoverRigs()
+	if err != nil {
+		return "", "", fmt.Errorf("cannot determine target rig: %w; use --rig=NAME", err)
+	}
+
+	switch len(rigs) {
+	case 1:
+		return rigs[0].Name, rigs[0].Path, nil
+	case 0:
+		return "", "", fmt.Errorf("cannot determine target rig: not inside a rig directory (and GT_RIG not set); use --rig=NAME")
+	default:
+		names := make([]string, len(rigs))
+		for i, r := range rigs {
+			names[i] = r.Name
+		}
+		return "", "", fmt.Errorf("cannot determine target rig (available: %s); use --rig=NAME", strings.Join(names, ", "))
+	}
 }
 
 // getAllRigs discovers all rigs in the current Gas Town workspace.
