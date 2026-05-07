@@ -97,8 +97,8 @@ func TestAutoInferRig(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for no rigs, got nil")
 		}
-		if !strings.Contains(err.Error(), "cannot determine target rig") {
-			t.Errorf("expected rig-detection error, got: %v", err)
+		if !strings.Contains(err.Error(), "no rigs registered") {
+			t.Errorf("error should mention no rigs registered, got: %v", err)
 		}
 		if !strings.Contains(err.Error(), "--rig=NAME") {
 			t.Errorf("error should suggest --rig=NAME, got: %v", err)

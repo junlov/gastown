@@ -161,20 +161,26 @@ func rigBeadsPrefix(townRoot, rigPath, rigName string) string {
 	return ""
 }
 
-// autoInferRig returns the sole registered rig for a given townRoot, or an
-// actionable error when the result is ambiguous. Callers use this when no
-// --rig flag was provided and cwd-based detection found nothing (e.g. Deacon
-// at HQ level on a non-default install where "gastown" rig does not exist).
-func autoInferRig(townRoot string) (name, path string, err error) {
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, loadErr := config.LoadRigsConfig(rigsConfigPath)
-	if loadErr != nil {
+// discoverRigsForTownRoot loads the rigs config for the given town root and
+// returns all registered rigs. Callers that don't yet have a town root
+// should use getAllRigs, which resolves it from the cwd first.
+func discoverRigsForTownRoot(townRoot string) ([]*rig.Rig, error) {
+	rigsConfig, err := config.LoadRigsConfig(constants.MayorRigsPath(townRoot))
+	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}
 
 	g := git.NewGit(townRoot)
 	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
-	rigs, err := rigMgr.DiscoverRigs()
+	return rigMgr.DiscoverRigs()
+}
+
+// autoInferRig returns the sole registered rig for a given townRoot, or an
+// actionable error when the result is ambiguous. Callers use this when no
+// --rig flag was provided and cwd-based detection found nothing (e.g. Deacon
+// at HQ level on a non-default install where "gastown" rig does not exist).
+func autoInferRig(townRoot string) (name, path string, err error) {
+	rigs, err := discoverRigsForTownRoot(townRoot)
 	if err != nil {
 		return "", "", fmt.Errorf("cannot determine target rig: %w; use --rig=NAME", err)
 	}
@@ -183,7 +189,7 @@ func autoInferRig(townRoot string) (name, path string, err error) {
 	case 1:
 		return rigs[0].Name, rigs[0].Path, nil
 	case 0:
-		return "", "", fmt.Errorf("cannot determine target rig: not inside a rig directory (and GT_RIG not set); use --rig=NAME")
+		return "", "", fmt.Errorf("cannot determine target rig: no rigs registered in this workspace; use --rig=NAME")
 	default:
 		names := make([]string, len(rigs))
 		for i, r := range rigs {
@@ -200,19 +206,5 @@ func getAllRigs() ([]*rig.Rig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
-
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
-	if err != nil {
-		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
-	}
-
-	g := git.NewGit(townRoot)
-	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
-	rigs, err := rigMgr.DiscoverRigs()
-	if err != nil {
-		return nil, err
-	}
-
-	return rigs, nil
+	return discoverRigsForTownRoot(townRoot)
 }
