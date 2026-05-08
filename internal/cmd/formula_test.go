@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -128,6 +129,65 @@ func TestAutoInferRig(t *testing.T) {
 			t.Errorf("expected no-rigs error (fallback from malformed JSON), got: %v", err)
 		}
 	})
+}
+
+func TestBuildConvoyLegSlingArgs_AlwaysIncludesNoConvoy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		agent      string
+		reviewOnly bool
+		wantFlags  []string
+	}{
+		{"no agent no review", "", false, []string{"--no-convoy"}},
+		{"with agent", "claude", false, []string{"--no-convoy", "--agent", "claude"}},
+		{"review only", "", true, []string{"--no-convoy", "--review-only"}},
+		{"agent and review", "gemini", true, []string{"--no-convoy", "--agent", "gemini", "--review-only"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildConvoyLegSlingArgs("bead-1", "myrig", "desc", "title", tt.agent, tt.reviewOnly)
+			for _, want := range tt.wantFlags {
+				if !slices.Contains(got, want) {
+					t.Errorf("buildConvoyLegSlingArgs() missing %q in %v", want, got)
+				}
+			}
+			if got[0] != "sling" {
+				t.Errorf("first arg must be 'sling', got %q", got[0])
+			}
+		})
+	}
+}
+
+func TestBuildWorkflowStepSlingArgs_AlwaysIncludesNoConvoy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		agent string
+	}{
+		{"no agent", ""},
+		{"with agent", "claude-haiku"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildWorkflowStepSlingArgs("bead-2", "myrig", "desc", "title", tt.agent)
+			if !slices.Contains(got, "--no-convoy") {
+				t.Errorf("buildWorkflowStepSlingArgs() missing --no-convoy in %v", got)
+			}
+			if got[0] != "sling" {
+				t.Errorf("first arg must be 'sling', got %q", got[0])
+			}
+			if tt.agent != "" && !slices.Contains(got, tt.agent) {
+				t.Errorf("buildWorkflowStepSlingArgs() missing agent %q in %v", tt.agent, got)
+			}
+		})
+	}
 }
 
 func TestResolveFormulaLegAgent_Precedence(t *testing.T) {
