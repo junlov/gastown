@@ -58,6 +58,10 @@ func GetDiskSpace(path string) (*DiskSpaceInfo, error) {
 	}, nil
 }
 
+// int8SliceToString converts the signed-byte fields used by darwin's
+// syscall.Statfs_t (e.g. Fstypename, Mntonname) into a Go string. The
+// standard `string(bytes)` idiom doesn't apply because the underlying
+// type is []int8, not []byte (signedness quirk of darwin syscalls).
 func int8SliceToString(b []int8) string {
 	buf := make([]byte, len(b))
 	for i, v := range b {
@@ -100,6 +104,8 @@ func parsePlistUint64(data []byte, key string) (uint64, bool) {
 	for {
 		tok, err := dec.Token()
 		if err != nil {
+			// any xml decode error (incl. io.EOF) → treat as "key not found";
+			// caller falls back to statfs values, which is the safe default.
 			return 0, false
 		}
 		switch t := tok.(type) {
