@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/formula"
 )
 
@@ -28,16 +30,19 @@ func TestAutoInferRig(t *testing.T) {
 
 	writeRigsJSON := func(t *testing.T, root string, rigNames []string) {
 		t.Helper()
-		content := `{"version":1,"rigs":{`
-		for i, name := range rigNames {
-			if i > 0 {
-				content += ","
-			}
-			content += `"` + name + `":{}`
+		cfg := &config.RigsConfig{
+			Version: 1,
+			Rigs:    make(map[string]config.RigEntry),
 		}
-		content += `}}`
+		for _, name := range rigNames {
+			cfg.Rigs[name] = config.RigEntry{}
+		}
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("marshal rigs.json: %v", err)
+		}
 		path := filepath.Join(root, "mayor", "rigs.json")
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
 			t.Fatalf("write rigs.json: %v", err)
 		}
 	}
@@ -102,6 +107,25 @@ func TestAutoInferRig(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "--rig=NAME") {
 			t.Errorf("error should suggest --rig=NAME, got: %v", err)
+		}
+	})
+
+	t.Run("malformed rigs.json surfaces error", func(t *testing.T) {
+		t.Parallel()
+		root := makeWorkspace(t)
+		path := filepath.Join(root, "mayor", "rigs.json")
+		if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+			t.Fatalf("write rigs.json: %v", err)
+		}
+
+		// discoverRigsForTownRoot silently falls back to an empty config on
+		// parse error, so autoInferRig surfaces the "no rigs registered" path.
+		_, _, err := autoInferRig(root)
+		if err == nil {
+			t.Fatal("expected error for malformed rigs.json, got nil")
+		}
+		if !strings.Contains(err.Error(), "no rigs registered") {
+			t.Errorf("expected no-rigs error (fallback from malformed JSON), got: %v", err)
 		}
 	})
 }
