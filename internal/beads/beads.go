@@ -379,7 +379,7 @@ func NewWithBeadsDir(workDir, beadsDir string) *Beads {
 
 // ForAgentBead returns a Beads wrapper suitable for operating on agent beads.
 //
-// Agent beads (labelled gt:agent) live in the TOWN database, but their IDs
+// Agent beads (labeled gt:agent) live in the TOWN database, but their IDs
 // are prefixed with the rig prefix (e.g. "za-zack-polecat-furiosa"). The
 // default prefix routing in routes.jsonl maps "za-" → zack rig database, so
 // any agent-bead operation issued from a rig context (or any context that
@@ -394,7 +394,7 @@ func NewWithBeadsDir(workDir, beadsDir string) *Beads {
 //     ResolveRoutingTarget, forIssueID) do not redirect lookups by prefix.
 //
 // If the town root cannot be determined, returns the original wrapper to
-// preserve current behaviour.
+// preserve current behavior.
 func (b *Beads) ForAgentBead() *Beads {
 	townRoot := b.getTownRoot()
 	if townRoot == "" {
