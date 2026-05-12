@@ -127,8 +127,13 @@ func (d *Daemon) dispatchReaperDog(vars map[string]string) error {
 		args = append(args, "--var", fmt.Sprintf("%s=%s", k, v))
 	}
 
-	cmd := exec.Command("gt", args...)
+	cmd := exec.Command(d.gtPath, args...) //nolint:gosec // G204: d.gtPath resolved at daemon init via LookPath
 	cmd.Dir = d.config.TownRoot
+	// Inherit os.Environ() (cmd.Env left nil) — gt sling performs WRITES
+	// (creates wisps, dispatches dogs) so it must NOT carry
+	// BD_DOLT_AUTO_COMMIT=off from bdReadOnlyEnv(). PATH augmentation at
+	// daemon startup (PATCH-007) ensures the inherited env still finds
+	// gt/bd via os.Environ()'s PATH.
 	util.SetDetachedProcessGroup(cmd)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("gt sling: %w", err)
