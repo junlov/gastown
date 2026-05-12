@@ -47,10 +47,10 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofrs/flock"
+	"github.com/steveyegge/gastown/internal/atomicfile"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/atomicfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -529,9 +529,60 @@ type State struct {
 	Databases []string `json:"databases,omitempty"`
 }
 
+// SQLServerInfo is Dolt's own runtime metadata from .dolt/sql-server.info.
+type SQLServerInfo struct {
+	PID      int
+	Port     int
+	ServerID string
+	Path     string
+}
+
 // StateFile returns the path to the state file.
 func StateFile(townRoot string) string {
 	return filepath.Join(townRoot, "daemon", "dolt-state.json")
+}
+
+func sqlServerInfoPath(config *Config) string {
+	return filepath.Join(config.DataDir, ".dolt", "sql-server.info")
+}
+
+// SQLServerInfoPath returns the Dolt-managed sql-server.info path for a town.
+func SQLServerInfoPath(townRoot string) string {
+	return sqlServerInfoPath(DefaultConfig(townRoot))
+}
+
+// ReadSQLServerInfo reads Dolt's own sql-server.info metadata for a town.
+func ReadSQLServerInfo(townRoot string) (*SQLServerInfo, error) {
+	return readSQLServerInfo(DefaultConfig(townRoot))
+}
+
+func readSQLServerInfo(config *Config) (*SQLServerInfo, error) {
+	path := sqlServerInfoPath(config)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(data)), ":", 3)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("malformed sql-server.info at %s", path)
+	}
+	pid, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("malformed sql-server.info PID at %s: %w", path, err)
+	}
+	port, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("malformed sql-server.info port at %s: %w", path, err)
+	}
+	info := &SQLServerInfo{
+		PID:  pid,
+		Port: port,
+		Path: path,
+	}
+	if len(parts) > 2 {
+		info.ServerID = parts[2]
+	}
+	return info, nil
 }
 
 // LoadState loads Dolt server state from disk.
@@ -604,6 +655,15 @@ func IsRunning(townRoot string) (bool, int, error) {
 		}
 		_ = conn.Close()
 		return true, 0, nil
+	}
+
+	// Prefer Dolt's own runtime metadata when present. During daemon restarts,
+	// daemon/dolt-state.json and daemon/dolt.pid can lag behind the live
+	// sql-server process, but .dolt/sql-server.info is written by Dolt itself.
+	if info, err := readSQLServerInfo(config); err == nil && info.Port == config.Port && info.PID > 0 {
+		if processIsAlive(info.PID) && isDoltServerOnPort(config.Port) && doltProcessMatchesTown(townRoot, info.PID, config) {
+			return true, info.PID, nil
+		}
 	}
 
 	// First check PID file
@@ -1281,6 +1341,21 @@ func CheckPortAvailable(port int) error {
 // without it, returns PID only (ZFC fix: gt-utuk).
 func PortHolder(port int) (pid int, dataDir string) {
 	pid = findDoltServerOnPort(port)
+	if pid <= 0 {
+		return 0, ""
+	}
+	if dataDir = GetDoltDataDirFromProcess(pid); dataDir != "" {
+		return pid, dataDir
+	}
+	if configPath := getDoltConfigPathFromProcess(pid); configPath != "" {
+		if filepath.Base(configPath) == "config.yaml" {
+			return pid, filepath.Dir(configPath)
+		}
+		return pid, configPath
+	}
+	if cwd := getProcessCWD(pid); cwd != "" {
+		return pid, cwd
+	}
 	return pid, ""
 }
 
@@ -3961,7 +4036,8 @@ func serverExecSQL(townRoot, query string) error {
 //
 // Dolt requires --host, --port, --user, --no-tls as global flags (before the
 // subcommand), not as subcommand flags. The order is:
-//   dolt --host=H --port=P --user=U --no-tls sql -q "..."
+//
+//	dolt --host=H --port=P --user=U --no-tls sql -q "..."
 func buildServerSQLCmd(ctx context.Context, config *Config, args ...string) *exec.Cmd {
 	// Global connection flags must come before the "sql" subcommand.
 	// Always pass --password to prevent dolt from prompting on stdin
