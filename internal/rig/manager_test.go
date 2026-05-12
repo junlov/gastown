@@ -590,6 +590,50 @@ exit 0
 	}
 }
 
+func TestInitBeadsPassesCanonicalDatabase(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake bd arg/env logging is shell-specific")
+	}
+
+	rigPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rigPath, "mayor", "rig"), 0755); err != nil {
+		t.Fatalf("mkdir mayor/rig: %v", err)
+	}
+
+	cmdLog := filepath.Join(t.TempDir(), "bd-cmds.log")
+	script := `#!/usr/bin/env bash
+set -e
+printf 'args=%s env=%s beads=%s db=%s\n' "$*" "${BEADS_DOLT_SERVER_DATABASE:-<unset>}" "${BEADS_DIR:-<unset>}" "${BEADS_DB:-<unset>}" >> "$BD_CMD_LOG"
+exit 0
+`
+	binDir := writeFakeBD(t, script, "")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("BD_CMD_LOG", cmdLog)
+	t.Setenv("BEADS_DIR", filepath.Join(rigPath, "wrong", ".beads"))
+	t.Setenv("BEADS_DB", filepath.Join(rigPath, "wrong.db"))
+	t.Setenv("BEADS_DOLT_SERVER_DATABASE", "stale_prefix_db")
+
+	manager := &Manager{}
+	if err := manager.InitBeads(rigPath, "xx", "my_project"); err != nil {
+		t.Fatalf("InitBeads: %v", err)
+	}
+
+	logData, err := os.ReadFile(cmdLog)
+	if err != nil {
+		t.Fatalf("reading command log: %v", err)
+	}
+	cmds := string(logData)
+	if !strings.Contains(cmds, "args=init --prefix xx --database my_project --server") {
+		t.Fatalf("bd init did not use canonical database; log:\n%s", cmds)
+	}
+	if strings.Contains(cmds, "env=stale_prefix_db") || strings.Contains(cmds, "wrong.db") || strings.Contains(cmds, filepath.Join(rigPath, "wrong", ".beads")) {
+		t.Fatalf("stale BEADS env leaked into bd subprocess; log:\n%s", cmds)
+	}
+	if !strings.Contains(cmds, "env=my_project") {
+		t.Fatalf("bd subprocess did not receive canonical database env; log:\n%s", cmds)
+	}
+}
+
 func TestInitAgentBeadsUsesRigBeadsDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake bd stub is not compatible with multiline descriptions on Windows")
