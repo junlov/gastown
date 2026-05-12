@@ -1814,8 +1814,13 @@ func runPolecatPoolInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf(" %s %v\n", style.Warning.Render("FAILED"), addErr)
 			continue
 		}
-		// Set agent state to idle (polecat was created without work)
-		if stateErr := mgr.SetAgentState(name, "idle"); stateErr != nil {
+		// Set agent state to idle (polecat was created without work).
+		// Use the retry variant: createAgentBeadWithRetry above leaves a brief
+		// Dolt MVCC visibility window where the just-committed bead isn't yet
+		// readable by the next UpdateAgentState query, surfacing as "issue not
+		// found". Retries with backoff close that window — same pattern as
+		// SetAgentStateWithRetry's other call site in polecat_spawn.go.
+		if stateErr := mgr.SetAgentStateWithRetry(name, "idle"); stateErr != nil {
 			fmt.Printf(" %s (created but couldn't set idle state: %v)\n", style.Warning.Render("⚠"), stateErr)
 		} else {
 			fmt.Printf(" %s (%s)\n", style.Success.Render("✓"), style.Dim.Render(p.ClonePath))
