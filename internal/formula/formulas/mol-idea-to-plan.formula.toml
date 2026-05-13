@@ -155,6 +155,7 @@ id = "human-clarify"
 title = "Gather human clarifications on PRD"
 needs = ["prd-review"]
 target = "mayor"
+interactive = true
 description = """
 Present the consolidated questions to the human and capture their answers.
 
