@@ -4,7 +4,7 @@ package session
 
 // ActivateAgentLogging is a no-op on Windows: the detached subprocess relies on
 // Unix-specific Setsid / SIGTERM semantics that are not available on Windows.
-func ActivateAgentLogging(sessionID, workDir, runID string) error {
+func ActivateAgentLogging(sessionID, workDir, runID, agentType string) error {
 	return nil
 }
 

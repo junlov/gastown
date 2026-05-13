@@ -13,22 +13,22 @@ import (
 )
 
 // ActivateAgentLogging spawns a detached `gt agent-log` process to stream the
-// session's Claude Code JSONL conversation log to VictoriaLogs.
+// session's agent conversation log to VictoriaLogs.
 //
 // The process is started with Setsid so it survives the parent's exit.
 // A PID file at /tmp/gt-agentlog-<session>.pid ensures only one watcher
 // runs per session: any previous watcher is killed before spawning a new one.
 //
-// --since is set to ~60s before now so only JSONL files from this GT session's
-// Claude instance are watched, excluding pre-existing user sessions or other
-// Gas Town rigs running in the same work directory.
+// --since is set to ~60s before now so only logs from this GT session's agent
+// instance are watched, excluding pre-existing user sessions or other Gas Town
+// rigs running in the same work directory.
 //
 // runID is the GASTA run identifier (GT_RUN) generated at session spawn time.
 // It is passed to the agent-log subprocess so every agent.event it emits
 // carries the same run.id for waterfall correlation. Pass "" to omit.
 //
 // Opt-in: caller must check GT_LOG_AGENT_OUTPUT=true before calling.
-func ActivateAgentLogging(sessionID, workDir, runID string) error {
+func ActivateAgentLogging(sessionID, workDir, runID, agentType string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolving executable: %w", err)
@@ -51,6 +51,9 @@ func ActivateAgentLogging(sessionID, workDir, runID string) error {
 		"--session", sessionID,
 		"--work-dir", workDir,
 		"--since", since,
+	}
+	if agentType != "" {
+		args = append(args, "--agent", agentType)
 	}
 	if runID != "" {
 		args = append(args, "--run-id", runID)

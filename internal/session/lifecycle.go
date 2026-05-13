@@ -284,7 +284,7 @@ func StartSession(t *tmux.Tmux, cfg SessionConfig) (_ *StartResult, retErr error
 	// Reads ~/.claude/projects/<hash>/<session>.jsonl and emits agent.event logs.
 	// Non-fatal: observability failures must never block agent startup.
 	if os.Getenv("GT_LOG_AGENT_OUTPUT") == "true" && os.Getenv("GT_OTEL_LOGS_URL") != "" {
-		if err := ActivateAgentLogging(cfg.SessionID, cfg.WorkDir, runID); err != nil {
+		if err := ActivateAgentLogging(cfg.SessionID, cfg.WorkDir, runID, runtimeConfig.ResolvedAgent); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: agent log watcher setup failed for %s: %v\n", cfg.SessionID, err)
 		}
 	}
