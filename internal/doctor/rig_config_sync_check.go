@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,12 +21,12 @@ import (
 // can't find the beads prefix to check docked/parked status.
 type RigConfigSyncCheck struct {
 	FixableCheck
-	missingConfig    []string          // Rig names missing config.json
-	prefixMismatches []prefixMismatch  // Prefix mismatches between config.json and registry
-	missingRigBeads  []rigBeadInfo     // Rigs missing identity beads
-	missingDoltDB    []string          // Rigs missing Dolt database
-	missingPrefixCfg []string          // Rigs missing issue-prefix in config.yaml
-	dbNameMismatches []dbMismatch      // Dolt database name doesn't match prefix
+	missingConfig    []string         // Rig names missing config.json
+	prefixMismatches []prefixMismatch // Prefix mismatches between config.json and registry
+	missingRigBeads  []rigBeadInfo    // Rigs missing identity beads
+	missingDoltDB    []string         // Rigs missing Dolt database
+	missingPrefixCfg []string         // Rigs missing issue-prefix in config.yaml
+	dbNameMismatches []dbMismatch     // Dolt database name doesn't match prefix
 }
 
 type prefixMismatch struct {
@@ -41,10 +42,10 @@ type rigBeadInfo struct {
 }
 
 type dbMismatch struct {
-	rigName     string
-	prefix      string
-	currentDB   string
-	expectedDB  string
+	rigName    string
+	prefix     string
+	currentDB  string
+	expectedDB string
 }
 
 // NewRigConfigSyncCheck creates a new rig config sync check.
@@ -191,8 +192,13 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 				}
 
 				if !c.doltDatabaseExists(ctx, metadata.DoltDatabase) {
-					c.missingDoltDB = append(c.missingDoltDB, rigName)
-					details = append(details, fmt.Sprintf("Rig %s Dolt database '%s' not found on server", rigName, metadata.DoltDatabase))
+					if metadata.DoltDatabase != expectedDBName && c.doltDatabaseExists(ctx, expectedDBName) {
+						// The canonical database exists; the mismatch repair below will
+						// repoint metadata without re-initializing anything destructive.
+					} else {
+						c.missingDoltDB = append(c.missingDoltDB, rigName)
+						details = append(details, fmt.Sprintf("Rig %s Dolt database '%s' not found on server", rigName, metadata.DoltDatabase))
+					}
 				}
 			}
 		}
@@ -335,11 +341,19 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 
 		rigPath := filepath.Join(ctx.TownRoot, rigName)
 		mayorRigPath := filepath.Join(rigPath, "mayor", "rig")
+		if c.doltDatabaseExists(ctx, rigName) {
+			continue
+		}
 
-		// Run bd init --prefix <prefix> --force --destroy-token to create the database
+		// Run bd init against the rig-name database, not the prefix-derived default.
+		doltCfg := doltserver.DefaultConfig(ctx.TownRoot)
 		destroyToken := fmt.Sprintf("DESTROY-%s", entry.BeadsConfig.Prefix)
-		cmd := exec.Command("bd", "init", "--prefix", entry.BeadsConfig.Prefix, "--force", "--destroy-token="+destroyToken)
+		cmd := exec.Command("bd", "init", "--prefix", entry.BeadsConfig.Prefix, "--database", rigName, "--server", "--server-port", strconv.Itoa(doltCfg.Port), "--force", "--destroy-token="+destroyToken)
 		cmd.Dir = mayorRigPath
+		cmd.Env = append(stripEnvPrefixes(os.Environ(), "BEADS_DIR=", "BEADS_DB=", "BEADS_DOLT_SERVER_DATABASE="),
+			"BEADS_DIR="+filepath.Join(mayorRigPath, ".beads"),
+			"BEADS_DOLT_SERVER_DATABASE="+rigName,
+		)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("could not initialize Dolt DB for %s: %w\n%s", rigName, err, string(output))
 		}
