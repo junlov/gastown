@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/steveyegge/gastown/internal/cli"
 	"encoding/json"
 	"fmt"
+	"github.com/steveyegge/gastown/internal/cli"
 	"io"
 	"os"
 	"path/filepath"
@@ -653,7 +653,7 @@ func outputAttachmentStatus(ctx RoleContext) {
 
 	// Show inline formula steps if formula name is known, else fall back to bd mol current
 	if attachment.AttachedFormula != "" {
-		showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, strings.Split(attachment.FormulaVars, "\n"))
+		showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, attachmentFormulaVars(attachment))
 	} else {
 		showMoleculeExecutionPrompt(ctx.WorkDir, attachment.AttachedMolecule)
 	}
