@@ -309,13 +309,19 @@ func verifyBeadExists(beadID string) error {
 // spawning polecats or creating molecule/hook side effects for beads that only
 // resolve from HQ or another rig database.
 func verifyBeadExistsInTargetRigDatabase(beadID, targetRig, townRoot string) error {
-	if beadID == "" || targetRig == "" || townRoot == "" {
+	if beadID == "" {
 		return nil
+	}
+	if targetRig == "" {
+		return fmt.Errorf("cannot verify bead %s in target rig: target rig is empty; refusing to sling before creating hooks or molecule side effects", beadID)
+	}
+	if townRoot == "" {
+		return fmt.Errorf("cannot verify bead %s in target rig %q: town root is unavailable; refusing to sling before creating hooks or molecule side effects", beadID, targetRig)
 	}
 
 	targetRigDir := beads.GetRigDirForName(townRoot, targetRig)
 	if targetRigDir == "" {
-		return nil
+		return fmt.Errorf("cannot resolve target rig %q beads database for bead %s; refusing to sling before creating hooks or molecule side effects", targetRig, beadID)
 	}
 	targetBeadsDir := filepath.Join(targetRigDir, ".beads")
 
