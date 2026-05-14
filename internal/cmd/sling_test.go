@@ -791,18 +791,22 @@ func TestResolveTargetRejectsLivePolecatMissingTargetRigDatabase(t *testing.T) {
 	prevResolve := resolveTargetAgentFn
 	t.Cleanup(func() { resolveTargetAgentFn = prevResolve })
 	resolveTargetAgentFn = func(target string) (string, string, string, error) {
-		return target, "%1", filepath.Join(townRoot, "gastown", "polecats", "toast"), nil
+		return "gastown/polecats/toast", "%1", filepath.Join(townRoot, "gastown", "polecats", "toast"), nil
 	}
 
-	_, err := resolveTarget("gastown/polecats/toast", ResolveTargetOptions{
-		BeadID:   "gt-r2405",
-		TownRoot: townRoot,
-	})
-	if err == nil {
-		t.Fatal("expected target-rig database validation error")
-	}
-	if !strings.Contains(err.Error(), "not present in target rig") {
-		t.Fatalf("unexpected error: %v", err)
+	for _, target := range []string{"gastown/polecats/toast", "gastown/toast", "gt-gastown-polecat-toast"} {
+		t.Run(target, func(t *testing.T) {
+			_, err := resolveTarget(target, ResolveTargetOptions{
+				BeadID:   "gt-r2405",
+				TownRoot: townRoot,
+			})
+			if err == nil {
+				t.Fatal("expected target-rig database validation error")
+			}
+			if !strings.Contains(err.Error(), "not present in target rig") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

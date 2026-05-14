@@ -297,8 +297,8 @@ func resolveTarget(target string, opts ResolveTargetOptions) (*ResolvedTarget, e
 		}
 		return nil, fmt.Errorf("resolving target: %w", err)
 	}
-	if opts.BeadID != "" && isPolecatTarget(target) {
-		parts := strings.Split(target, "/")
+	if opts.BeadID != "" && isPolecatTarget(agentID) {
+		parts := strings.Split(agentID, "/")
 		if len(parts) >= 3 && parts[1] == "polecats" {
 			rigName := parts[0]
 			if err := verifyBeadExistsInTargetRigDatabase(opts.BeadID, rigName, opts.TownRoot); err != nil {
