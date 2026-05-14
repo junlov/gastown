@@ -168,7 +168,7 @@ func tailOpenCodeSession(ctx context.Context, dbPath string, ocSession openCodeS
 					lastPartUpdate = row.TimeUpdated
 				}
 				for _, ev := range parseOpenCodePart(row, sessionID, agentType, ocSession.ID) {
-					key := openCodePartEventKey(row, ev)
+					key := row.ID + ":" + ev.EventType
 					if seen[key] {
 						continue
 					}
@@ -215,13 +215,6 @@ func tailOpenCodeSession(ctx context.Context, dbPath string, ocSession openCodeS
 	}
 }
 
-func openCodePartEventKey(row openCodePartRow, ev AgentEvent) string {
-	if ev.EventType == "usage" && row.MessageID != "" {
-		return row.MessageID + ":usage"
-	}
-	return row.ID + ":" + ev.EventType
-}
-
 func openCodePartRows(ctx context.Context, dbPath, nativeSessionID string, sinceUpdated int64) ([]openCodePartRow, error) {
 	query := fmt.Sprintf(`select p.id, p.message_id, p.time_created, p.time_updated, p.data, m.data as message_data
 from part p join message m on m.id = p.message_id
@@ -261,21 +254,19 @@ func sqliteString(s string) string {
 }
 
 type openCodeMessageData struct {
-	Role   string             `json:"role"`
-	Tokens *openCodeTokenData `json:"tokens"`
-	Time   struct {
+	Role   string `json:"role"`
+	Tokens *struct {
+		Input  int `json:"input"`
+		Output int `json:"output"`
+		Cache  struct {
+			Read  int `json:"read"`
+			Write int `json:"write"`
+		} `json:"cache"`
+	} `json:"tokens"`
+	Time struct {
 		Created   int64 `json:"created"`
 		Completed int64 `json:"completed"`
 	} `json:"time"`
-}
-
-type openCodeTokenData struct {
-	Input  int `json:"input"`
-	Output int `json:"output"`
-	Cache  struct {
-		Read  int `json:"read"`
-		Write int `json:"write"`
-	} `json:"cache"`
 }
 
 type openCodePartData struct {
@@ -285,9 +276,8 @@ type openCodePartData struct {
 		Start int64 `json:"start"`
 		End   int64 `json:"end"`
 	} `json:"time"`
-	Tool   string             `json:"tool"`
-	Tokens *openCodeTokenData `json:"tokens"`
-	State  *struct {
+	Tool  string `json:"tool"`
+	State *struct {
 		Status string          `json:"status"`
 		Input  json.RawMessage `json:"input"`
 		Output json.RawMessage `json:"output"`
@@ -347,16 +337,6 @@ func parseOpenCodePart(row openCodePartRow, sessionID, agentType, nativeSessionI
 			events = append(events, result)
 		}
 		return events
-	case "step-finish":
-		if part.Tokens == nil || tokensEmpty(part.Tokens) {
-			return nil
-		}
-		base.EventType = "usage"
-		base.InputTokens = part.Tokens.Input
-		base.OutputTokens = part.Tokens.Output
-		base.CacheReadTokens = part.Tokens.Cache.Read
-		base.CacheCreationTokens = part.Tokens.Cache.Write
-		return []AgentEvent{base}
 	default:
 		return nil
 	}
@@ -370,7 +350,7 @@ func parseOpenCodeUsage(row openCodeMessageRow, sessionID, agentType, nativeSess
 	if message.Role != "assistant" || message.Tokens == nil || message.Time.Completed == 0 {
 		return nil
 	}
-	if tokensEmpty(message.Tokens) {
+	if message.Tokens.Input == 0 && message.Tokens.Output == 0 && message.Tokens.Cache.Read == 0 && message.Tokens.Cache.Write == 0 {
 		return nil
 	}
 	return []AgentEvent{{
@@ -385,10 +365,6 @@ func parseOpenCodeUsage(row openCodeMessageRow, sessionID, agentType, nativeSess
 		CacheReadTokens:     message.Tokens.Cache.Read,
 		CacheCreationTokens: message.Tokens.Cache.Write,
 	}}
-}
-
-func tokensEmpty(tokens *openCodeTokenData) bool {
-	return tokens == nil || (tokens.Input == 0 && tokens.Output == 0 && tokens.Cache.Read == 0 && tokens.Cache.Write == 0)
 }
 
 func openCodePartComplete(part openCodePartData) bool {

@@ -63,25 +63,6 @@ func TestParseOpenCodeUsage(t *testing.T) {
 	}
 }
 
-func TestParseOpenCodePart_StepFinishUsage(t *testing.T) {
-	row := openCodePartRow{
-		ID:          "prt_step",
-		TimeCreated: 1700000000000,
-		TimeUpdated: 1700000000999,
-		Data:        `{"reason":"stop","type":"step-finish","tokens":{"input":11,"output":22,"cache":{"read":33,"write":44}}}`,
-		MessageData: `{"role":"assistant"}`,
-	}
-
-	events := parseOpenCodePart(row, "gt-test", "opencode", "ses_1")
-	if len(events) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(events))
-	}
-	ev := events[0]
-	if ev.EventType != "usage" || ev.InputTokens != 11 || ev.OutputTokens != 22 || ev.CacheReadTokens != 33 || ev.CacheCreationTokens != 44 {
-		t.Fatalf("unexpected step-finish usage event: %+v", ev)
-	}
-}
-
 func TestOpenCodeWatchEmitsEventsFromDB(t *testing.T) {
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		t.Skip("sqlite3 not available")
@@ -103,7 +84,6 @@ insert into message values ('msg_user', 'ses_test', 1700000000001, 1700000000001
 insert into part values ('prt_user', 'msg_user', 'ses_test', 1700000000002, 1700000000002, '{"type":"text","text":"start"}');
 insert into message values ('msg_assistant', 'ses_test', 1700000000100, 1700000000200, '{"role":"assistant","tokens":{"input":1,"output":2,"cache":{"read":3,"write":4}},"time":{"created":1700000000100,"completed":1700000000200}}');
 insert into part values ('prt_assistant', 'msg_assistant', 'ses_test', 1700000000101, 1700000000201, '{"type":"text","text":"done","time":{"start":1700000000101,"end":1700000000201}}');
-insert into part values ('prt_step', 'msg_assistant', 'ses_test', 1700000000202, 1700000000202, '{"type":"step-finish","tokens":{"input":5,"output":6,"cache":{"read":7,"write":8}}}');
 `
 	if out, err := exec.Command("sqlite3", dbPath, schema).CombinedOutput(); err != nil {
 		t.Fatalf("creating sqlite db: %v: %s", err, out)
@@ -137,7 +117,7 @@ insert into part values ('prt_step', 'msg_assistant', 'ses_test', 1700000000202,
 	if events[1].Content != "done" {
 		t.Fatalf("unexpected assistant text event: %+v", events[1])
 	}
-	if events[2].EventType != "usage" || events[2].InputTokens != 5 || events[2].OutputTokens != 6 {
+	if events[2].EventType != "usage" || events[2].InputTokens != 1 || events[2].OutputTokens != 2 {
 		t.Fatalf("unexpected usage event: %+v", events[2])
 	}
 }
