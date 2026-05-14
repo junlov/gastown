@@ -1212,11 +1212,6 @@ func DetectZombiePolecats(bd *BdCli, workDir, rigName string, router *mail.Route
 				agentState = snap.AgentState
 			}
 			if beads.AgentState(agentState) == AgentStateIdle {
-				if zombie, found := detectSubmittedStillRunning(bd, workDir, polecatName, sessionName, t, polecat.ReadSessionHeartbeat(townRoot, sessionName), snap, witCfg.HeartbeatStartupGraceD()); found {
-					result.Zombies = append(result.Zombies, zombie)
-					continue
-				}
-
 				cleanupStatus := snap.cleanupStatus()
 				if cleanupStatus != "" && cleanupStatus != "clean" {
 					// ZFC (gt-5rne): Report data, don't escalate. The witness agent
@@ -1440,6 +1435,9 @@ func detectSubmittedStillRunning(bd *BdCli, workDir, polecatName, sessionName st
 
 func isSubmittedStillRunningCandidate(snap *agentBeadSnapshot, hb *polecat.SessionHeartbeat, staleThreshold time.Duration) (time.Duration, bool) {
 	if snap == nil || snap.cleanupStatus() != "clean" || !hasSuccessfulSubmissionEvidence(snap) {
+		return 0, false
+	}
+	if beads.AgentState(snap.AgentState) == AgentStateIdle {
 		return 0, false
 	}
 	age := snap.age()
