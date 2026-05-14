@@ -49,6 +49,7 @@ func (a *OpenCodeAdapter) Watch(ctx context.Context, sessionID, workDir string, 
 			}
 
 			tailOpenCodeSession(ctx, dbPath, *ocSession, sessionID, a.AgentType(), ch)
+			since = time.Now().Add(-watchPollInterval)
 		}
 	}()
 
