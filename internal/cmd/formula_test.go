@@ -1,12 +1,134 @@
 package cmd
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/formula"
 )
+
+// TestAutoInferRig verifies the rig auto-selection logic used when --rig is
+// not provided and cwd-based detection finds nothing (e.g. Deacon at HQ level
+// on a non-default install where "gastown" rig does not exist).
+func TestAutoInferRig(t *testing.T) {
+	t.Parallel()
+
+	makeWorkspace := func(t *testing.T) (root string) {
+		t.Helper()
+		root = t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "mayor"), 0o755); err != nil {
+			t.Fatalf("mkdir mayor: %v", err)
+		}
+		return root
+	}
+
+	writeRigsJSON := func(t *testing.T, root string, rigNames []string) {
+		t.Helper()
+		cfg := &config.RigsConfig{
+			Version: 1,
+			Rigs:    make(map[string]config.RigEntry),
+		}
+		for _, name := range rigNames {
+			cfg.Rigs[name] = config.RigEntry{}
+		}
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("marshal rigs.json: %v", err)
+		}
+		path := filepath.Join(root, "mayor", "rigs.json")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatalf("write rigs.json: %v", err)
+		}
+	}
+
+	t.Run("single rig auto-selects", func(t *testing.T) {
+		t.Parallel()
+		root := makeWorkspace(t)
+		rigDir := filepath.Join(root, "myrig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatalf("mkdir myrig: %v", err)
+		}
+		writeRigsJSON(t, root, []string{"myrig"})
+
+		name, path, err := autoInferRig(root)
+		if err != nil {
+			t.Fatalf("expected success, got error: %v", err)
+		}
+		if name != "myrig" {
+			t.Errorf("name = %q, want %q", name, "myrig")
+		}
+		if path != rigDir {
+			t.Errorf("path = %q, want %q", path, rigDir)
+		}
+	})
+
+	t.Run("multiple rigs require explicit --rig", func(t *testing.T) {
+		t.Parallel()
+		root := makeWorkspace(t)
+		for _, name := range []string{"rig1", "rig2"} {
+			if err := os.MkdirAll(filepath.Join(root, name), 0o755); err != nil {
+				t.Fatalf("mkdir %s: %v", name, err)
+			}
+		}
+		writeRigsJSON(t, root, []string{"rig1", "rig2"})
+
+		_, _, err := autoInferRig(root)
+		if err == nil {
+			t.Fatal("expected error for multiple rigs, got nil")
+		}
+		if !strings.Contains(err.Error(), "cannot determine target rig") {
+			t.Errorf("expected rig-detection error, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "--rig=NAME") {
+			t.Errorf("error should suggest --rig=NAME, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "rig1") || !strings.Contains(err.Error(), "rig2") {
+			t.Errorf("error should list available rigs, got: %v", err)
+		}
+	})
+
+	t.Run("no rigs registered", func(t *testing.T) {
+		t.Parallel()
+		root := makeWorkspace(t)
+		writeRigsJSON(t, root, []string{})
+
+		_, _, err := autoInferRig(root)
+		if err == nil {
+			t.Fatal("expected error for no rigs, got nil")
+		}
+		if !strings.Contains(err.Error(), "no rigs registered") {
+			t.Errorf("error should mention no rigs registered, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "--rig=NAME") {
+			t.Errorf("error should suggest --rig=NAME, got: %v", err)
+		}
+	})
+
+	t.Run("malformed rigs.json surfaces error", func(t *testing.T) {
+		t.Parallel()
+		root := makeWorkspace(t)
+		path := filepath.Join(root, "mayor", "rigs.json")
+		if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+			t.Fatalf("write rigs.json: %v", err)
+		}
+
+		// discoverRigsForTownRoot silently falls back to an empty config on
+		// parse error, so autoInferRig surfaces the "no rigs registered" path.
+		_, _, err := autoInferRig(root)
+		if err == nil {
+			t.Fatal("expected error for malformed rigs.json, got nil")
+		}
+		if !strings.Contains(err.Error(), "no rigs registered") {
+			t.Errorf("expected no-rigs error (fallback from malformed JSON), got: %v", err)
+		}
+	})
+}
 
 func TestResolveFormulaLegAgent_Precedence(t *testing.T) {
 	t.Parallel()
