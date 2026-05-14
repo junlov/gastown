@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/daemon"
+	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/scheduler/capacity"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -627,6 +628,9 @@ Supported keys:
   scheduler.max_polecats      Dispatch mode: -1 = direct (default), N > 0 = deferred
   scheduler.batch_size        Beads per heartbeat (default: 1)
   scheduler.spawn_delay       Delay between spawns (default: 0s)
+  polecat.target_clean_policy When to delete <polecat>/target/ on reuse
+                              ("per_bead", "every_n_beads:<N>", "never";
+                              default: per_bead)
   maintenance.window          Maintenance window start time in HH:MM (e.g., "03:00")
   maintenance.interval        How often: "daily", "weekly", "monthly", or duration
   maintenance.threshold       Commit count threshold (default: 1000)
@@ -671,6 +675,8 @@ Supported keys:
   scheduler.max_polecats      Dispatch mode (-1 = direct, N > 0 = deferred)
   scheduler.batch_size        Beads per heartbeat
   scheduler.spawn_delay       Delay between spawns
+  polecat.target_clean_policy When to delete <polecat>/target/ on reuse
+                              (per_bead, every_n_beads:<N>, never)
   maintenance.window          Maintenance window start time (HH:MM)
   maintenance.interval        How often: daily, weekly, monthly, or duration
   maintenance.threshold       Commit count threshold
@@ -767,6 +773,18 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		}
 		townSettings.Scheduler.SpawnDelay = value
 
+	case "polecat.target_clean_policy":
+		// Validate the policy string parses cleanly. Storage form is the raw input
+		// (normalized via parsed.String() so e.g. "  per_bead  " becomes "per_bead").
+		parsed, err := polecat.ParseTargetCleanPolicy(value)
+		if err != nil {
+			return fmt.Errorf("invalid value for %s: %w", key, err)
+		}
+		if townSettings.Polecat == nil {
+			townSettings.Polecat = &config.PolecatConfig{}
+		}
+		townSettings.Polecat.TargetCleanPolicy = parsed.String()
+
 	case "maintenance.window", "maintenance.interval", "maintenance.threshold":
 		return setMaintenanceConfig(townRoot, key, value)
 
@@ -794,7 +812,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		if strings.HasPrefix(key, "lifecycle.") {
 			return setLifecycleConfig(townRoot, key, value)
 		}
-		return fmt.Errorf("unknown config key: %q\n\nSupported keys:\n  convoy.notify_on_complete\n  cli_theme\n  default_agent\n  dolt.port\n  scheduler.max_polecats\n  scheduler.batch_size\n  scheduler.spawn_delay\n  maintenance.window\n  maintenance.interval\n  maintenance.threshold\n  lifecycle.reaper.*\n  lifecycle.compactor.*\n  lifecycle.doctor.*\n  lifecycle.backup.*", key)
+		return fmt.Errorf("unknown config key: %q\n\nSupported keys:\n  convoy.notify_on_complete\n  cli_theme\n  default_agent\n  dolt.port\n  scheduler.max_polecats\n  scheduler.batch_size\n  scheduler.spawn_delay\n  polecat.target_clean_policy\n  maintenance.window\n  maintenance.interval\n  maintenance.threshold\n  lifecycle.reaper.*\n  lifecycle.compactor.*\n  lifecycle.doctor.*\n  lifecycle.backup.*", key)
 	}
 
 	if err := config.SaveTownSettings(settingsPath, townSettings); err != nil {
@@ -861,6 +879,13 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 		}
 		value = scfg.GetSpawnDelay().String()
 
+	case "polecat.target_clean_policy":
+		if townSettings.Polecat != nil && townSettings.Polecat.TargetCleanPolicy != "" {
+			value = townSettings.Polecat.TargetCleanPolicy
+		} else {
+			value = polecat.DefaultTargetCleanPolicy().String()
+		}
+
 	case "maintenance.window", "maintenance.interval", "maintenance.threshold":
 		return getMaintenanceConfig(townRoot, key)
 
@@ -879,7 +904,7 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 		if strings.HasPrefix(key, "lifecycle.") {
 			return getLifecycleConfig(townRoot, key)
 		}
-		return fmt.Errorf("unknown config key: %q\n\nSupported keys:\n  convoy.notify_on_complete\n  cli_theme\n  default_agent\n  dolt.port\n  scheduler.max_polecats\n  scheduler.batch_size\n  scheduler.spawn_delay\n  maintenance.window\n  maintenance.interval\n  maintenance.threshold\n  lifecycle.reaper.*\n  lifecycle.compactor.*\n  lifecycle.doctor.*\n  lifecycle.backup.*", key)
+		return fmt.Errorf("unknown config key: %q\n\nSupported keys:\n  convoy.notify_on_complete\n  cli_theme\n  default_agent\n  dolt.port\n  scheduler.max_polecats\n  scheduler.batch_size\n  scheduler.spawn_delay\n  polecat.target_clean_policy\n  maintenance.window\n  maintenance.interval\n  maintenance.threshold\n  lifecycle.reaper.*\n  lifecycle.compactor.*\n  lifecycle.doctor.*\n  lifecycle.backup.*", key)
 	}
 
 	fmt.Println(value)
