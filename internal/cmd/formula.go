@@ -692,18 +692,7 @@ func executeConvoyFormula(f *formula.Formula, formulaName, targetRig string) err
 		// Agent precedence (GH#2118): per-leg > CLI --agent > formula-level
 		legAgent := resolveFormulaLegAgent(leg.Agent, formulaRunAgent, f.Agent)
 
-		// Use gt sling with args for leg-specific context
-		slingArgs := []string{
-			"sling", legBeadID, targetRig,
-			"-a", leg.Description,
-			"-s", leg.Title,
-		}
-		if legAgent != "" {
-			slingArgs = append(slingArgs, "--agent", legAgent)
-		}
-		if leg.ReviewOnly || f.ReviewOnly {
-			slingArgs = append(slingArgs, "--review-only")
-		}
+		slingArgs := buildConvoyLegSlingArgs(legBeadID, targetRig, leg.Description, leg.Title, legAgent, leg.ReviewOnly || f.ReviewOnly)
 
 		slingCmd := exec.Command("gt", slingArgs...)
 		slingCmd.Stdout = os.Stdout
@@ -912,14 +901,7 @@ func executeWorkflowFormula(f *formula.Formula, formulaName, targetRig string) e
 		stepTarget := workflowStepTarget(step, targetRig)
 		stepDescription := workflowStepDescription(step, substituteFormulaVars(step.Description, setVars))
 
-		slingArgs := []string{
-			"sling", stepBeadID, stepTarget,
-			"-a", stepDescription,
-			"-s", step.Title,
-		}
-		if stepAgent != "" {
-			slingArgs = append(slingArgs, "--agent", stepAgent)
-		}
+		slingArgs := buildWorkflowStepSlingArgs(stepBeadID, stepTarget, stepDescription, step.Title, stepAgent)
 
 		slingCmd := exec.Command("gt", slingArgs...)
 		slingCmd.Stdout = os.Stdout
@@ -984,6 +966,41 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// buildConvoyLegSlingArgs constructs the gt-sling argument list for a convoy leg.
+// --no-convoy is always included: legs are tracked by the parent convoy, so per-leg
+// auto-convoy creation is redundant (closes #3856).
+func buildConvoyLegSlingArgs(beadID, targetRig, description, title, agent string, reviewOnly bool) []string {
+	args := []string{
+		"sling", beadID, targetRig,
+		"-a", description,
+		"-s", title,
+		"--no-convoy",
+	}
+	if agent != "" {
+		args = append(args, "--agent", agent)
+	}
+	if reviewOnly {
+		args = append(args, "--review-only")
+	}
+	return args
+}
+
+// buildWorkflowStepSlingArgs constructs the gt-sling argument list for a workflow step.
+// --no-convoy is always included: steps are tracked by the parent workflow bead, so
+// per-step auto-convoy creation is redundant (closes #3856).
+func buildWorkflowStepSlingArgs(beadID, targetRig, description, title, agent string) []string {
+	args := []string{
+		"sling", beadID, targetRig,
+		"-a", description,
+		"-s", title,
+		"--no-convoy",
+	}
+	if agent != "" {
+		args = append(args, "--agent", agent)
+	}
+	return args
 }
 
 // parseSetVars parses --set key=value pairs into a map for template rendering.
