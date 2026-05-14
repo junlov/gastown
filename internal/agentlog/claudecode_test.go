@@ -93,7 +93,6 @@ func TestNewAdapter(t *testing.T) {
 		wantType  string
 	}{
 		{"claudecode", "claudecode", false, "claudecode"},
-		{"claude alias", "claude", false, "claudecode"},
 		{"empty defaults to claudecode", "", false, "claudecode"},
 		{"opencode", "opencode", false, "opencode"},
 		{"unknown", "kiro", true, ""},

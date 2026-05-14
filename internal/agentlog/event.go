@@ -49,7 +49,7 @@ type AgentAdapter interface {
 // Returns nil if the agent type is unknown.
 func NewAdapter(agentType string) AgentAdapter {
 	switch agentType {
-	case "claudecode", "claude", "":
+	case "claudecode", "":
 		return &ClaudeCodeAdapter{}
 	case "opencode":
 		return &OpenCodeAdapter{}
