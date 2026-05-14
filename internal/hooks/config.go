@@ -284,6 +284,27 @@ func DefaultOverrides() map[string]*HooksConfig {
 		"deacon": {
 			PreToolUse: []HookEntry{
 				{
+					Matcher: "Bash(*for *seq*)",
+					Hooks: []Hook{{
+						Type:    "command",
+						Command: "echo '❌ BLOCKED: Deacon must not batch patrol cycles with for/seq loops.' && echo 'Run one patrol cycle, then use gt patrol report or gt handoff.' && exit 2",
+					}},
+				},
+				{
+					Matcher: "Bash(*while true*)",
+					Hooks: []Hook{{
+						Type:    "command",
+						Command: "echo '❌ BLOCKED: Deacon must not run open-ended patrol loops.' && echo 'Run one patrol cycle, then use gt patrol report or gt handoff.' && exit 2",
+					}},
+				},
+				{
+					Matcher: "Bash(*while :*)",
+					Hooks: []Hook{{
+						Type:    "command",
+						Command: "echo '❌ BLOCKED: Deacon must not run open-ended patrol loops.' && echo 'Run one patrol cycle, then use gt patrol report or gt handoff.' && exit 2",
+					}},
+				},
+				{
 					Matcher: "Bash(*bd mol pour*patrol*)",
 					Hooks: []Hook{{
 						Type:    "command",

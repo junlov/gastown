@@ -608,18 +608,21 @@ func TestComputeExpectedNoBase(t *testing.T) {
 		}
 	}
 
-	// Deacon should get DefaultBase + built-in patrol-formula-guard (same as witness)
+	// Deacon should get DefaultBase + built-in patrol-formula-guard plus anti-batch guards.
 	deacon, err := ComputeExpected("deacon")
 	if err != nil {
 		t.Fatalf("ComputeExpected(deacon) failed: %v", err)
 	}
-	if len(deacon.PreToolUse) < 4 {
-		t.Errorf("expected deacon to have at least 4 PreToolUse hooks from DefaultOverrides (patrol-formula-guard), got %d", len(deacon.PreToolUse))
+	if len(deacon.PreToolUse) < 7 {
+		t.Errorf("expected deacon to have at least 7 PreToolUse hooks from DefaultOverrides (anti-batch + patrol-formula-guard), got %d", len(deacon.PreToolUse))
 	}
 	if len(deacon.SessionStart) != len(defaultBase.SessionStart) {
 		t.Error("expected deacon to inherit SessionStart from DefaultBase")
 	}
 	deaconPatrolMatchers := map[string]bool{
+		"Bash(*for *seq*)":                  false,
+		"Bash(*while true*)":                false,
+		"Bash(*while :*)":                   false,
 		"Bash(*bd mol pour*patrol*)":        false,
 		"Bash(*bd mol pour *mol-witness*)":  false,
 		"Bash(*bd mol pour *mol-deacon*)":   false,
