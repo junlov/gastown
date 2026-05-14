@@ -948,16 +948,25 @@ func buildRestartCommandWithOpts(sessionName string, opts buildRestartCommandOpt
 		}
 	}
 
-	// Clear NODE_OPTIONS to prevent debugger flags (e.g., --inspect from VSCode)
-	// from being inherited through tmux into Claude's Node.js runtime.
-	// When the agent's runtime config explicitly sets NODE_OPTIONS (e.g., for
-	// memory tuning via --max-old-space-size in rc.toml [agents.X.env]), export
-	// that value so it survives handoff. Otherwise clear it.
-	// Note: agentEnv is intentionally nil when gtRole is empty (non-role handoffs),
-	// which causes the nil map lookup to return ("", false) — clearing NODE_OPTIONS.
-	if val, hasNodeOpts := agentEnv["NODE_OPTIONS"]; hasNodeOpts {
-		envMap["NODE_OPTIONS"] = val
-	} else {
+	// Merge all agent preset env vars from config.json [agents.X.env] so the
+	// new session inherits the same custom configuration (e.g. ANTHROPIC_BASE_URL,
+	// CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_CUSTOM_HEADERS for proxied Claude).
+	// This mirrors the first-spawn path in config/loader.go where preset.Env is
+	// merged into RuntimeConfig.Env. Existing keys (GT_ROLE, BD_ACTOR, etc.) take
+	// precedence over agent-defined keys.
+	for k, v := range agentEnv {
+		if _, exists := envMap[k]; !exists {
+			envMap[k] = v
+		}
+	}
+
+	// Special case: clear NODE_OPTIONS when not explicitly set in the agent
+	// config, to prevent debugger flags (e.g., --inspect from VSCode) from
+	// being inherited through tmux into Claude's Node.js runtime.
+	// Note: agentEnv is intentionally nil when gtRole is empty (non-role
+	// handoffs), which causes the nil map lookup to return ("", false) —
+	// clearing NODE_OPTIONS.
+	if _, hasNodeOpts := agentEnv["NODE_OPTIONS"]; !hasNodeOpts {
 		envMap["NODE_OPTIONS"] = ""
 	}
 
