@@ -348,6 +348,10 @@ type DaemonThresholds struct {
 	// BootSpawnCooldown prevents Boot from spawning on every daemon heartbeat (default "2m").
 	BootSpawnCooldown string `json:"boot_spawn_cooldown,omitempty"`
 
+	// BootIdleSuppression is how long to suppress Boot spawns after Boot reported "nothing"
+	// (deacon was healthy). Prevents burning API calls when deacon is running fine (default "15m").
+	BootIdleSuppression string `json:"boot_idle_suppression,omitempty"`
+
 	// DeaconGracePeriod is time to wait after starting Deacon before checking heartbeat (default "5m").
 	DeaconGracePeriod string `json:"deacon_grace_period,omitempty"`
 
