@@ -304,6 +304,47 @@ func verifyBeadExists(beadID string) error {
 	return nil
 }
 
+// verifyBeadExistsInTargetRigDatabase checks the target rig's beads database
+// directly instead of following prefix routing. This prevents gt sling from
+// spawning polecats or creating molecule/hook side effects for beads that only
+// resolve from HQ or another rig database.
+func verifyBeadExistsInTargetRigDatabase(beadID, targetRig, townRoot string) error {
+	if beadID == "" {
+		return nil
+	}
+	if targetRig == "" {
+		return fmt.Errorf("cannot verify bead %s in target rig: target rig is empty; refusing to sling before creating hooks or molecule side effects", beadID)
+	}
+	if townRoot == "" {
+		return fmt.Errorf("cannot verify bead %s in target rig %q: town root is unavailable; refusing to sling before creating hooks or molecule side effects", beadID, targetRig)
+	}
+
+	targetRigDir := beads.GetRigDirForName(townRoot, targetRig)
+	if targetRigDir == "" {
+		return fmt.Errorf("cannot resolve target rig %q beads database for bead %s; refusing to sling before creating hooks or molecule side effects", targetRig, beadID)
+	}
+	targetBeadsDir := filepath.Join(targetRigDir, ".beads")
+
+	out, err := BdCmd("--db", targetBeadsDir, "show", beadID, "--json", "--allow-stale").
+		Dir(targetRigDir).
+		StripBeadsDir().
+		Stderr(io.Discard).
+		Output()
+	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		return fmt.Errorf("bead %s is not present in target rig %q beads database; refusing to sling before creating hooks or molecule side effects", beadID, targetRig)
+	}
+
+	var infos []beadInfo
+	if err := json.Unmarshal(out, &infos); err != nil {
+		return fmt.Errorf("checking target rig %q database for bead %s: %w", targetRig, beadID, err)
+	}
+	if len(infos) == 0 {
+		return fmt.Errorf("bead %s is not present in target rig %q beads database; refusing to sling before creating hooks or molecule side effects", beadID, targetRig)
+	}
+
+	return nil
+}
+
 // getBeadInfo returns status and assignee for a bead.
 // Resolves the rig directory from the bead's prefix for correct dolt access.
 func getBeadInfo(beadID string) (*beadInfo, error) {
