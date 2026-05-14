@@ -1284,6 +1284,15 @@ func sendHandoffMail(subject, message string) (string, error) {
 	// Build labels for mail metadata (matches mail router format)
 	labels := fmt.Sprintf("from:%s", agentID)
 
+	// Close stale hooked mail beads from previous sessions before creating a new one.
+	// Without this, each handoff cycle accumulates beads in status=hooked. (GH#3859)
+	townB := beads.New(filepath.Join(townRoot, ".beads"))
+	if n, closeErr := townB.CloseStaleHookedMailBeads(agentID); closeErr != nil {
+		style.PrintWarning("couldn't close previous hooked mail bead(s): %v", closeErr)
+	} else if n > 0 {
+		fmt.Printf("%s Closed %d stale hooked mail bead(s)\n", style.Dim.Render("🧹"), n)
+	}
+
 	// Create mail bead directly using bd create with --silent to get the ID
 	// Mail goes to town-level beads (hq- prefix)
 	// Flags go first, then -- to end flag parsing, then the positional subject.
