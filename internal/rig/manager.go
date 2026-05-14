@@ -1254,6 +1254,11 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 	if err := beads.EnsureConfigYAML(beadsDir, prefix); err != nil {
 		return fmt.Errorf("ensuring config.yaml: %w", err)
 	}
+	if rigName != "" {
+		if err := doltserver.EnsureMetadataForBeadsDir(m.townRoot, beadsDir, rigName, rigName); err != nil {
+			return fmt.Errorf("ensuring metadata.json: %w", err)
+		}
+	}
 
 	// Ensure database has repository fingerprint (GH #25).
 	// This is idempotent - safe on both new and legacy (pre-0.17.5) databases.

@@ -532,7 +532,7 @@ exit 1
 	t.Setenv("BEADS_DIR_LOG", beadsDirLog)
 
 	manager := &Manager{}
-	if err := manager.InitBeads(rigPath, "gt", ""); err != nil {
+	if err := manager.InitBeads(rigPath, "gt", "testrig"); err != nil {
 		t.Fatalf("initBeads: %v", err)
 	}
 
@@ -544,6 +544,22 @@ exit 1
 	want := "prefix: gt\nissue-prefix: gt\ndolt.idle-timeout: \"0\"\n"
 	if string(config) != want {
 		t.Fatalf("config.yaml = %q, want %q", string(config), want)
+	}
+
+	metadataPath := filepath.Join(beadsDir, "metadata.json")
+	metadataBytes, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("reading metadata.json: %v", err)
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+		t.Fatalf("parsing metadata.json: %v", err)
+	}
+	if metadata["dolt_mode"] != "server" {
+		t.Fatalf("dolt_mode = %v, want server", metadata["dolt_mode"])
+	}
+	if metadata["dolt_database"] != "testrig" {
+		t.Fatalf("dolt_database = %v, want testrig", metadata["dolt_database"])
 	}
 	assertBeadsDirLog(t, beadsDirLog, beadsDir)
 }

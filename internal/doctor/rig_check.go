@@ -1083,6 +1083,9 @@ func (c *BeadsRedirectCheck) Fix(ctx *CheckContext) error {
 			configCmd.Env = bdEnv
 			_, _ = configCmd.CombinedOutput() // Ignore errors - older beads don't need this
 		}
+		if err := doltserver.EnsureMetadataForBeadsDir(ctx.TownRoot, rigBeadsDir, ctx.RigName, ctx.RigName); err != nil {
+			return fmt.Errorf("ensuring metadata.json: %w", err)
+		}
 		return nil
 	}
 
