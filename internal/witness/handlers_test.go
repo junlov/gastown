@@ -1902,6 +1902,12 @@ func TestSubmittedStillRunningCandidate(t *testing.T) {
 		t.Error("no-hook submitted sessions must still be treated as submitted still-running")
 	}
 
+	idleSnap := *baseSnap
+	idleSnap.AgentState = string(beads.AgentStateIdle)
+	if _, ok := isSubmittedStillRunningCandidate(&idleSnap, staleHB, config.DefaultWitnessHeartbeatStartupGrace); ok {
+		t.Error("normal idle polecats with submitted MR metadata must not be treated as submitted still-running")
+	}
+
 	freshHB := &polecat.SessionHeartbeat{
 		Timestamp: time.Now(),
 		State:     polecat.HeartbeatWorking,

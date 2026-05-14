@@ -75,6 +75,10 @@ func trackConvoyFailures(bd *BdCli, workDir string, result *DetectZombiePolecats
 }
 
 func zombieImpliesActiveFailure(zombie ZombieResult) bool {
+	switch zombie.Classification {
+	case ZombieBeadClosedStillRunning, ZombieSubmittedStillRunning:
+		return false
+	}
 	if zombie.Classification != "" {
 		return zombie.Classification.ImpliesActiveWork()
 	}
