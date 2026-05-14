@@ -492,6 +492,10 @@ func TestComputeExpectedTemplate_Gemini(t *testing.T) {
 		t.Error("expected GT_HOOK_SOURCE=compact in autonomous template")
 	}
 
+	if strings.Contains(string(content), `"context"`) || strings.Contains(string(content), `"fileName"`) {
+		t.Error("Gemini template should not force context.fileName; GEMINI.md overlays must remain loadable")
+	}
+
 	// Interactive role should get settings-interactive.json template
 	interactiveContent, err := ComputeExpectedTemplate("gemini", "settings.json", "crew")
 	if err != nil {
