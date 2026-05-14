@@ -189,6 +189,109 @@ exit 0
 	}
 }
 
+func TestCreateRoutesToResolvedRigBeadsDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix shell script mock for bd")
+	}
+
+	townRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor"), 0755); err != nil {
+		t.Fatalf("mkdir mayor: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(townRoot, "mayor", "town.json"), []byte(`{"name":"test"}`), 0644); err != nil {
+		t.Fatalf("write town.json: %v", err)
+	}
+
+	townBeadsDir := filepath.Join(townRoot, ".beads")
+	if err := os.MkdirAll(townBeadsDir, 0755); err != nil {
+		t.Fatalf("mkdir town .beads: %v", err)
+	}
+	if err := WriteRoutes(townBeadsDir, []Route{
+		{Prefix: "hq-", Path: "."},
+		{Prefix: "tr-", Path: "testrig"},
+	}); err != nil {
+		t.Fatalf("write routes: %v", err)
+	}
+
+	rigDir := filepath.Join(townRoot, "testrig")
+	rigBeadsDir := filepath.Join(rigDir, ".beads")
+	canonicalRigBeadsDir := filepath.Join(rigDir, "mayor", "rig", ".beads")
+	for _, dir := range []string{rigBeadsDir, canonicalRigBeadsDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(rigBeadsDir, "redirect"), []byte("mayor/rig/.beads\n"), 0644); err != nil {
+		t.Fatalf("write rig redirect: %v", err)
+	}
+
+	stubDir := t.TempDir()
+	logPath := filepath.Join(stubDir, "bd.log")
+	stubScript := `#!/bin/sh
+cmd=""
+for arg in "$@"; do
+  case "$arg" in
+    --*) ;;
+    *) cmd="$arg"; break ;;
+  esac
+done
+if [ "$cmd" = "create" ]; then
+  printf 'beads_dir=%s\n' "$BEADS_DIR" >> "$MOCK_BD_LOG"
+  printf 'args=%s\n' "$*" >> "$MOCK_BD_LOG"
+  printf '{"id":"tr-test1","title":"test","status":"open","priority":2,"labels":[]}\n'
+fi
+exit 0
+`
+	stubPath := filepath.Join(stubDir, "bd")
+	if err := os.WriteFile(stubPath, []byte(stubScript), 0755); err != nil {
+		t.Fatalf("write bd stub: %v", err)
+	}
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MOCK_BD_LOG", logPath)
+
+	workerDir := filepath.Join(rigDir, "polecats", "quartz")
+	if err := os.MkdirAll(workerDir, 0755); err != nil {
+		t.Fatalf("mkdir worker: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		opts CreateOptions
+	}{
+		{
+			name: "explicit rig",
+			opts: CreateOptions{Title: "Merge: hq-abc", Rig: "testrig", Ephemeral: true},
+		},
+		{
+			name: "parent prefix",
+			opts: CreateOptions{Title: "Child task", Parent: "tr-parent"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+				t.Fatalf("remove log: %v", err)
+			}
+
+			bd := New(workerDir)
+			if _, err := bd.Create(tc.opts); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+
+			logData, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatalf("read mock log: %v", err)
+			}
+			logOutput := string(logData)
+			if !strings.Contains(logOutput, "beads_dir="+canonicalRigBeadsDir) {
+				t.Fatalf("Create did not route to canonical rig beads dir %q:\n%s", canonicalRigBeadsDir, logOutput)
+			}
+			if strings.Contains(logOutput, "beads_dir="+rigBeadsDir+"\n") {
+				t.Fatalf("Create used intermediate redirect beads dir %q:\n%s", rigBeadsDir, logOutput)
+			}
+		})
+	}
+}
+
 // TestIsFlagLikeTitle verifies flag-like title detection (gt-e0kx5).
 func TestIsFlagLikeTitle(t *testing.T) {
 	tests := []struct {

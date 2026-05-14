@@ -394,9 +394,31 @@ func (b *Beads) getTownRoot() string {
 // This follows any redirects and returns the actual beads directory path.
 func (b *Beads) getResolvedBeadsDir() string {
 	if b.beadsDir != "" {
-		return b.beadsDir
+		return ResolveBeadsDir(b.beadsDir)
 	}
 	return ResolveBeadsDir(b.workDir)
+}
+
+// targetBeadsDirForCreate returns the database a create operation should use.
+// Rig is authoritative for MR/conflict-task creates; otherwise parent-prefixed
+// children should land beside their parent so bd can resolve the relationship.
+func (b *Beads) targetBeadsDirForCreate(opts CreateOptions) string {
+	fallback := b.getResolvedBeadsDir()
+	townRoot := b.getTownRoot()
+
+	if opts.Rig != "" && townRoot != "" {
+		if rigDir := GetRigDirForName(townRoot, opts.Rig); rigDir != "" {
+			if targetDir := ResolveBeadsDir(rigDir); targetDir != "" {
+				return targetDir
+			}
+		}
+	}
+
+	if opts.Parent != "" {
+		return ResolveRoutingTarget(townRoot, opts.Parent, fallback)
+	}
+
+	return fallback
 }
 
 // forIssueID returns a Beads wrapper bound to the correct beads directory for
@@ -471,10 +493,7 @@ func (b *Beads) run(args ...string) (_ []byte, retErr error) {
 
 	// Conditionally use --allow-stale to prevent failures when db is temporarily stale
 	// (e.g., after daemon is killed during shutdown). Only if bd supports it.
-	beadsDir := b.beadsDir
-	if beadsDir == "" {
-		beadsDir = ResolveBeadsDir(b.workDir)
-	}
+	beadsDir := b.getResolvedBeadsDir()
 	runEnv := append(b.buildRunEnv(), "BEADS_DIR="+beadsDir)
 	fullArgs := MaybePrependAllowStaleWithEnv(runEnv, args)
 
@@ -1254,6 +1273,17 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 		return nil, fmt.Errorf("refusing to create bead: %w (got %q)", ErrFlagTitle, opts.Title)
 	}
 
+	targetDir := b.targetBeadsDirForCreate(opts)
+	if targetDir != "" && targetDir != b.getResolvedBeadsDir() {
+		bdForCreate := &Beads{
+			workDir:    b.workDir,
+			beadsDir:   targetDir,
+			serverPort: b.serverPort,
+			isolated:   b.isolated,
+		}
+		return bdForCreate.Create(opts)
+	}
+
 	if b.store != nil && !opts.Ephemeral {
 		return b.storeCreate(opts)
 	}
@@ -1283,29 +1313,6 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	if opts.Ephemeral {
 		args = append(args, "--ephemeral")
 	}
-	// When Rig is set, route to the rig's .beads dir via BEADS_DIR rather than
-	// passing --repo=<rigDir>. Using --repo causes bd to open the target database
-	// as a second connection while BEADS_DIR already holds one, triggering a
-	// pthread_cond_wait deadlock when both paths resolve to the same database
-	// (e.g., a polecat running gt done on its own rig's issue). (hq-1uf2)
-	bdForCreate := b
-	if opts.Rig != "" {
-		if townRoot := b.getTownRoot(); townRoot != "" {
-			if rigDir := GetRigDirForName(townRoot, opts.Rig); rigDir != "" {
-				rigBeadsDir := filepath.Join(rigDir, ".beads")
-				if _, statErr := os.Stat(rigBeadsDir); statErr == nil {
-					bdForCreate = &Beads{
-						workDir:    b.workDir,
-						beadsDir:   rigBeadsDir,
-						serverPort: b.serverPort,
-						isolated:   b.isolated,
-					}
-				}
-				// If .beads dir doesn't exist, fall through using b (no --repo flag).
-				// bd will auto-route from BEADS_DIR, which is better than hanging.
-			}
-		}
-	}
 	// Default Actor from BD_ACTOR env var if not specified
 	// Uses getActor() to respect isolated mode (tests)
 	actor := opts.Actor
@@ -1316,7 +1323,7 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 		args = append(args, "--actor="+actor)
 	}
 
-	out, err := bdForCreate.run(args...)
+	out, err := b.run(args...)
 	if err != nil {
 		return nil, err
 	}
