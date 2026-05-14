@@ -412,6 +412,13 @@ func (b *Beads) ForAgentBead() *Beads {
 	}
 }
 
+func (b *Beads) agentBeadTarget() *Beads {
+	if b.noRoute {
+		return b
+	}
+	return b.ForAgentBead()
+}
+
 // getActor returns the BD_ACTOR value for this context.
 // Returns empty string when in isolated mode (tests) to prevent
 // inherited actors from routing to production databases.

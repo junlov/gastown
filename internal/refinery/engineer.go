@@ -1240,7 +1240,7 @@ func (e *Engineer) HandleMRInfoSuccess(mr *MRInfo, result ProcessResult) {
 
 	// 1.5. Clear agent bead's active_mr reference (traceability cleanup)
 	if mr.AgentBead != "" {
-		if err := e.beads.UpdateAgentActiveMR(mr.AgentBead, ""); err != nil {
+		if err := e.clearAgentActiveMR(mr.AgentBead); err != nil {
 			_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: failed to clear agent bead %s active_mr: %v\n", mr.AgentBead, err)
 		}
 	}
@@ -1292,6 +1292,10 @@ func (e *Engineer) HandleMRInfoSuccess(mr *MRInfo, result ProcessResult) {
 
 	// 5. Log success
 	_, _ = fmt.Fprintf(e.output, "[Engineer] ✓ Merged: %s (commit: %s)\n", mr.ID, result.MergeCommit)
+}
+
+func (e *Engineer) clearAgentActiveMR(agentBeadID string) error {
+	return e.beads.ForAgentBead().UpdateAgentActiveMR(agentBeadID, "")
 }
 
 // HandleMRInfoFailure handles a failed merge from MRInfo.
