@@ -578,9 +578,9 @@ func TestRunGatesForPhase_FiltersCorrectly(t *testing.T) {
 	e.workDir = t.TempDir()
 	e.output = io.Discard
 	e.config.Gates = map[string]*GateConfig{
-		"pre-lint":    {Cmd: "true", Phase: GatePhasePreMerge},
-		"pre-test":    {Cmd: "true", Phase: GatePhasePreMerge},
-		"post-build":  {Cmd: "true", Phase: GatePhasePostSquash},
+		"pre-lint":   {Cmd: "true", Phase: GatePhasePreMerge},
+		"pre-test":   {Cmd: "true", Phase: GatePhasePreMerge},
+		"post-build": {Cmd: "true", Phase: GatePhasePostSquash},
 	}
 
 	// Pre-merge phase should only run pre-lint and pre-test
@@ -871,12 +871,12 @@ case "$*" in
   "--allow-stale version")
     exit 0
     ;;
-  "--allow-stale list --type=convoy --status=open --json"|"list --type=convoy --status=open --json")
+	  "--allow-stale list --status=open --json --limit=0"|"list --status=open --json --limit=0")
     if [ -n "$BEADS_DIR" ]; then
       echo "BEADS_DIR leaked: $BEADS_DIR" >&2
       exit 1
     fi
-    echo '[{"id":"hq-cv-l9","title":"Cross-rig convoy","status":"open","description":""}]'
+	    echo '[{"id":"hq-cv-l9","title":"Cross-rig convoy","status":"open","description":"","issue_type":"convoy"}]'
     ;;
   "--allow-stale dep list hq-cv-l9 --direction=down --type=tracks --json"|"dep list hq-cv-l9 --direction=down --type=tracks --json")
     if [ -n "$BEADS_DIR" ]; then

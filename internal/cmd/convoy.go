@@ -702,14 +702,12 @@ func runConvoyCreate(cmd *cobra.Command, args []string) error {
 
 	createArgs := []string{
 		"create",
-		"--type=convoy",
+		"--type=task",
 		"--id=" + convoyID,
 		"--title=" + name,
 		"--description=" + description,
+		"--labels=" + convoyLabels(convoyOwned),
 		"--json",
-	}
-	if convoyOwned {
-		createArgs = append(createArgs, "--labels=gt:owned")
 	}
 	if beads.NeedsForceForID(convoyID) {
 		createArgs = append(createArgs, "--force")
@@ -793,10 +791,11 @@ func runConvoyAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	var convoys []struct {
-		ID     string `json:"id"`
-		Title  string `json:"title"`
-		Status string `json:"status"`
-		Type   string `json:"issue_type"`
+		ID     string   `json:"id"`
+		Title  string   `json:"title"`
+		Status string   `json:"status"`
+		Type   string   `json:"issue_type"`
+		Labels []string `json:"labels"`
 	}
 	if err := json.Unmarshal(showOut, &convoys); err != nil {
 		return fmt.Errorf("parsing convoy data: %w", err)
@@ -809,7 +808,7 @@ func runConvoyAdd(cmd *cobra.Command, args []string) error {
 	convoy := convoys[0]
 
 	// Verify it's actually a convoy type
-	if convoy.Type != "convoy" {
+	if !isConvoyIssue(convoy.Type, convoy.Labels) {
 		return fmt.Errorf("'%s' is not a convoy (type: %s)", convoyID, convoy.Type)
 	}
 	if err := ensureKnownConvoyStatus(convoy.Status); err != nil {
@@ -963,11 +962,12 @@ func checkSingleConvoy(townBeads, convoyID string, dryRun bool) error {
 	}
 
 	var convoys []struct {
-		ID          string `json:"id"`
-		Title       string `json:"title"`
-		Status      string `json:"status"`
-		Type        string `json:"issue_type"`
-		Description string `json:"description"`
+		ID          string   `json:"id"`
+		Title       string   `json:"title"`
+		Status      string   `json:"status"`
+		Type        string   `json:"issue_type"`
+		Description string   `json:"description"`
+		Labels      []string `json:"labels"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &convoys); err != nil {
 		return fmt.Errorf("parsing convoy data: %w", err)
@@ -980,7 +980,7 @@ func checkSingleConvoy(townBeads, convoyID string, dryRun bool) error {
 	convoy := convoys[0]
 
 	// Verify it's actually a convoy type
-	if convoy.Type != "convoy" {
+	if !isConvoyIssue(convoy.Type, convoy.Labels) {
 		return fmt.Errorf("'%s' is not a convoy (type: %s)", convoyID, convoy.Type)
 	}
 	if err := ensureKnownConvoyStatus(convoy.Status); err != nil {
@@ -1023,11 +1023,12 @@ func runConvoyClose(cmd *cobra.Command, args []string) error {
 	}
 
 	var convoys []struct {
-		ID          string `json:"id"`
-		Title       string `json:"title"`
-		Status      string `json:"status"`
-		Type        string `json:"issue_type"`
-		Description string `json:"description"`
+		ID          string   `json:"id"`
+		Title       string   `json:"title"`
+		Status      string   `json:"status"`
+		Type        string   `json:"issue_type"`
+		Description string   `json:"description"`
+		Labels      []string `json:"labels"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &convoys); err != nil {
 		return fmt.Errorf("parsing convoy data: %w", err)
@@ -1040,7 +1041,7 @@ func runConvoyClose(cmd *cobra.Command, args []string) error {
 	convoy := convoys[0]
 
 	// Verify it's actually a convoy type
-	if convoy.Type != "convoy" {
+	if !isConvoyIssue(convoy.Type, convoy.Labels) {
 		return fmt.Errorf("'%s' is not a convoy (type: %s)", convoyID, convoy.Type)
 	}
 	if err := ensureKnownConvoyStatus(convoy.Status); err != nil {
@@ -1199,7 +1200,7 @@ func runConvoyLand(cmd *cobra.Command, args []string) error {
 	convoy := convoys[0]
 
 	// Verify it's a convoy type
-	if convoy.Type != "convoy" {
+	if !isConvoyIssue(convoy.Type, convoy.Labels) {
 		return fmt.Errorf("'%s' is not a convoy (type: %s)", convoyID, convoy.Type)
 	}
 
@@ -1492,20 +1493,9 @@ func runConvoyStranded(cmd *cobra.Command, args []string) error {
 func findStrandedConvoys(townBeads string) ([]strandedConvoyInfo, error) {
 	stranded := []strandedConvoyInfo{} // Initialize as empty slice for proper JSON encoding
 
-	// List all open convoys
-	out, err := runBdJSON(townBeads, "list", "--type=convoy", "--status=open", "--json")
+	convoys, err := listConvoyIssues(townBeads, "open", false)
 	if err != nil {
 		return nil, fmt.Errorf("listing convoys: %w", err)
-	}
-
-	var convoys []struct {
-		ID          string `json:"id"`
-		Title       string `json:"title"`
-		CreatedAt   string `json:"created_at"`
-		Description string `json:"description"`
-	}
-	if err := json.Unmarshal(out, &convoys); err != nil {
-		return nil, fmt.Errorf("parsing convoy list: %w", err)
 	}
 
 	// Check each convoy for stranded state
@@ -1662,19 +1652,9 @@ func isSlingableBead(townRoot, beadID string) bool {
 func checkAndCloseCompletedConvoys(townBeads string, dryRun bool) ([]struct{ ID, Title string }, error) {
 	var closed []struct{ ID, Title string }
 
-	// List all open convoys
-	out, err := runBdJSON(townBeads, "list", "--type=convoy", "--status=open", "--json")
+	convoys, err := listConvoyIssues(townBeads, "open", false)
 	if err != nil {
 		return nil, fmt.Errorf("listing convoys: %w", err)
-	}
-
-	var convoys []struct {
-		ID     string `json:"id"`
-		Title  string `json:"title"`
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(out, &convoys); err != nil {
-		return nil, fmt.Errorf("parsing convoy list: %w", err)
 	}
 
 	// Check each convoy
@@ -1965,20 +1945,9 @@ func runConvoyStatus(cmd *cobra.Command, args []string) error {
 }
 
 func showAllConvoyStatus(townBeads string) error {
-	// List all convoy-type issues
-	out, err := runBdJSON(townBeads, "list", "--type=convoy", "--status=open", "--json")
+	convoys, err := listConvoyIssues(townBeads, "open", false)
 	if err != nil {
 		return fmt.Errorf("listing convoys: %w", err)
-	}
-
-	var convoys []struct {
-		ID     string   `json:"id"`
-		Title  string   `json:"title"`
-		Status string   `json:"status"`
-		Labels []string `json:"labels"`
-	}
-	if err := json.Unmarshal(out, &convoys); err != nil {
-		return fmt.Errorf("parsing convoy list: %w", err)
 	}
 
 	if len(convoys) == 0 {
@@ -2012,29 +1981,9 @@ func runConvoyList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// List convoy-type issues.
-	listArgs := []string{"list", "--type=convoy", "--json"}
-	if convoyListStatus != "" {
-		listArgs = append(listArgs, "--status="+convoyListStatus)
-	} else if convoyListAll {
-		listArgs = append(listArgs, "--all")
-	}
-	// bd no longer requires --flat for JSON output.
-
-	out, err := runBdJSON(townBeads, listArgs...)
+	convoys, err := listConvoyIssues(townBeads, convoyListStatus, convoyListAll)
 	if err != nil {
 		return fmt.Errorf("listing convoys: %w", err)
-	}
-
-	var convoys []struct {
-		ID        string   `json:"id"`
-		Title     string   `json:"title"`
-		Status    string   `json:"status"`
-		CreatedAt string   `json:"created_at"`
-		Labels    []string `json:"labels"`
-	}
-	if err := json.Unmarshal(out, &convoys); err != nil {
-		return fmt.Errorf("parsing convoy list: %w", err)
 	}
 
 	if convoyListJSON {
@@ -2105,13 +2054,7 @@ func runConvoyList(cmd *cobra.Command, args []string) error {
 }
 
 // printConvoyTree displays convoys with their child issues in a tree format.
-func printConvoyTree(townBeads string, convoys []struct {
-	ID        string   `json:"id"`
-	Title     string   `json:"title"`
-	Status    string   `json:"status"`
-	CreatedAt string   `json:"created_at"`
-	Labels    []string `json:"labels"`
-}) error {
+func printConvoyTree(townBeads string, convoys []convoyListIssue) error {
 	for _, c := range convoys {
 		// Get tracked issues for this convoy
 		tracked, err := getTrackedIssues(townBeads, c.ID)
@@ -2176,6 +2119,88 @@ func hasLabel(labels []string, target string) bool { //nolint:unparam // target 
 		}
 	}
 	return false
+}
+
+type convoyListIssue struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Status      string   `json:"status"`
+	CreatedAt   string   `json:"created_at"`
+	Description string   `json:"description"`
+	IssueType   string   `json:"issue_type"`
+	Labels      []string `json:"labels"`
+}
+
+func isConvoyIssue(issueType string, labels []string) bool {
+	return issueType == "convoy" || hasLabel(labels, "gt:convoy")
+}
+
+func convoyLabels(owned bool) string {
+	if owned {
+		return "gt:convoy,gt:owned"
+	}
+	return "gt:convoy"
+}
+
+func listConvoyIssues(townBeads, status string, all bool, extraLabels ...string) ([]convoyListIssue, error) {
+	args := []string{"list", "--label=gt:convoy", "--json", "--limit=0"}
+	for _, label := range extraLabels {
+		args = append(args, "--label="+label)
+	}
+	if status != "" {
+		args = append(args, "--status="+status)
+	} else if all {
+		args = append(args, "--all")
+	}
+
+	convoys, err := readConvoyIssues(townBeads, args...)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(convoys))
+	for _, convoy := range convoys {
+		seen[convoy.ID] = true
+	}
+
+	legacyArgs := []string{"list", "--json", "--limit=0"}
+	if status != "" {
+		legacyArgs = append(legacyArgs, "--status="+status)
+	} else if all {
+		legacyArgs = append(legacyArgs, "--all")
+	}
+	legacy, err := readConvoyIssues(townBeads, legacyArgs...)
+	if err != nil {
+		return nil, err
+	}
+	for _, issue := range legacy {
+		if seen[issue.ID] || issue.IssueType != "convoy" || !hasAllLabels(issue.Labels, extraLabels) {
+			continue
+		}
+		convoys = append(convoys, issue)
+		seen[issue.ID] = true
+	}
+	return convoys, nil
+}
+
+func readConvoyIssues(townBeads string, args ...string) ([]convoyListIssue, error) {
+	out, err := runBdJSON(townBeads, args...)
+	if err != nil {
+		return nil, err
+	}
+	var issues []convoyListIssue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		return nil, err
+	}
+	return issues, nil
+}
+
+func hasAllLabels(labels, required []string) bool {
+	for _, label := range required {
+		if !hasLabel(labels, label) {
+			return false
+		}
+	}
+	return true
 }
 
 // convoyMergeFromFields extracts the merge strategy from a convoy description
@@ -2762,17 +2787,9 @@ func runConvoyTUI() error {
 // resolveConvoyNumber converts a numeric shortcut (1, 2, 3...) to a convoy ID.
 // Numbers correspond to the order shown in 'gt convoy list'.
 func resolveConvoyNumber(townBeads string, n int) (string, error) {
-	// Get convoy list (same query as runConvoyList)
-	out, err := runBdJSON(townBeads, "list", "--type=convoy", "--json")
+	convoys, err := listConvoyIssues(townBeads, "", false)
 	if err != nil {
 		return "", fmt.Errorf("listing convoys: %w", err)
-	}
-
-	var convoys []struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(out, &convoys); err != nil {
-		return "", fmt.Errorf("parsing convoy list: %w", err)
 	}
 
 	if n < 1 || n > len(convoys) {

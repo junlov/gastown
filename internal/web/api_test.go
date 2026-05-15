@@ -1076,7 +1076,7 @@ func TestParseConvoyListJSON(t *testing.T) {
 	}{
 		{
 			name: "valid JSON with convoys",
-			json: `[{"id":"hq-cv-abc","title":"Deploy widgets"},{"id":"hq-cv-def","title":"Fix bugs"}]`,
+			json: `[{"id":"hq-cv-abc","title":"Deploy widgets","issue_type":"convoy"},{"id":"hq-cv-def","title":"Fix bugs","issue_type":"task","labels":["gt:convoy"]}]`,
 			want: []string{"hq-cv-abc", "hq-cv-def"},
 		},
 		{
@@ -1096,7 +1096,7 @@ func TestParseConvoyListJSON(t *testing.T) {
 		},
 		{
 			name: "skips empty IDs",
-			json: `[{"id":"hq-cv-abc"},{"id":""},{"id":"hq-cv-def"}]`,
+			json: `[{"id":"hq-cv-abc","issue_type":"convoy"},{"id":"","issue_type":"convoy"},{"id":"hq-cv-def","labels":["gt:convoy"]}]`,
 			want: []string{"hq-cv-abc", "hq-cv-def"},
 		},
 	}
