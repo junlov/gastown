@@ -135,6 +135,35 @@ func TestFilterFormulaScaffolds_EmptyIssues(t *testing.T) {
 	}
 }
 
+func TestGetWispIDsUsesBdMolWispList(t *testing.T) {
+	beadsPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(beadsPath, "issues.jsonl"), []byte(`{"id":"stale-jsonl-wisp"}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	binDir := t.TempDir()
+	bdPath := filepath.Join(binDir, "bd")
+	bdScript := `#!/bin/sh
+if [ "$1" = "mol" ] && [ "$2" = "wisp" ] && [ "$3" = "list" ] && [ "$4" = "--json" ]; then
+  printf '{"wisps":[{"id":"dolt-wisp-1"},{"id":"dolt-wisp-2"}],"count":2}\n'
+  exit 0
+fi
+exit 1
+`
+	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ids := getWispIDs(beadsPath)
+	if !ids["dolt-wisp-1"] || !ids["dolt-wisp-2"] {
+		t.Fatalf("expected IDs from bd mol wisp list, got %#v", ids)
+	}
+	if ids["stale-jsonl-wisp"] {
+		t.Fatalf("getWispIDs read stale issues.jsonl; got %#v", ids)
+	}
+}
+
 func TestFilterFormulaScaffolds_DotInNonScaffold(t *testing.T) {
 	// Issue ID has a dot but prefix is not a formula name
 	formulaNames := map[string]bool{constants.MolDeaconPatrol: true}
